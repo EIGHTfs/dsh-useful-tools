@@ -15,16 +15,15 @@
 
 ## 功能
 
-| 工具 | 作用 |
-|---|---|
-| `mark_read` | 把文件标记为已读（按宿主同一 recipe 补发 `fs/observed`）⇒ 之后原生 write/edit 可直接改 |
-| `mark_read（undo:true）` | 反向撤回：让原生写对该文件恢复「必须先读」门禁 |
-| `sync_plugin` | 把插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`write:true` 真写；`register:true` 注册进 profile，`dshHome` 可指向测试环境） |
-| `minihost` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来（start 启动 / stop 停止 / status 状态 / call 请求） |
-| `preview` | **前端模拟**：插件预览页（gen 生成，无 spec 时自动挂载插槽组件 / serve 启动，可反代真实后端或 minihost / stop / status） |
-| `verify_plugin` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码） |
-| `test_env` | 测试环境（隔离实例）：create 创建 / start 启动 / stop 停止 / status 状态；独立 DSH_HOME + 自动端口，随便崩不碰主实例 |
-| 自动标记钩子 | 对配置集合里的工具（默认 `grep`）执行后自动补发观测，无需手动 mark |
+| 工具 | 参数 | 简介 |
+|---|---|---|
+| `mark_read` | `paths` `file_path` `all` `undo` | 把文件标记为已读（按宿主同一 recipe 补发 `fs/observed`）⇒ 之后原生 write/edit 可直接改。`undo:true` 反向撤回，恢复「必须先读」门禁；`all:true` 作用于标记台账 |
+| `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去 |
+| `minihost` | `action` `plugin` `port` `path` `method` `body` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求） |
+| `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` | **前端模拟**：插件预览页。`action=gen`（生成，无 spec 时自动挂载插槽组件）/ `serve`（启动，`backend` 可反代真实后端或 minihost）/ `stop` / `status` |
+| `verify_plugin` | `plugin` `source` `profile` `log` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码）。`plugin` 传插件名或根目录，缺省巡检所有已装插件 |
+| `test_env` | `action` `kind` `version` `root` `force` `plugin` `pluginName` `dir` `dshBin` | 测试环境（隔离实例）：`action=create`（创建）/ `start`（启动）/ `stop`（停止）/ `status`（状态）。独立 DSH_HOME + 自动端口，随便崩不碰主实例 |
+| 自动标记钩子 | 配置项 `observeHook` `observeTools` | 非工具能力：对配置集合里的工具（默认 `grep`）执行后自动补发观测，无需手动 mark |
 
 ## 用法
 
