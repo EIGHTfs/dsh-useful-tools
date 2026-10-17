@@ -1,0 +1,25 @@
+{
+  "comment": "能读文件内容的命令预置清单（mark_read 的默认集合；可按需增删，也可用 mark_read 工具改）",
+  "commands": [
+    "cat",
+    "grep",
+    "rg",
+    "ag",
+    "head",
+    "tail",
+    "less",
+    "more",
+    "sed",
+    "awk",
+    "cut",
+    "sort",
+    "uniq",
+    "wc",
+    "nl",
+    "strings",
+    "xxd",
+    "hexdump",
+    "od",
+    "find"
+  ]
+}

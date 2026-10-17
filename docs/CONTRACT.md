@@ -70,6 +70,15 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 - 验证：`/api/x?y=1` 与 `/api/x` 返回同一状态码；注入 storageDomain 后 `/templates` 由 500 变 200。
 - 违反后果：带参数的接口全部 404；依赖宿主服务的插件在 minihost 里只能跑出 500。
 
+### C-109 mark_read 是「读命令集合」配置，不是文件标记
+`mark_read` 只有两个参数：`commands`（读命令集合，可直接写、可传文件路径从文件读、不传用预置清单
+`lib/core/mark-read/read-commands.json`）与 `undo`（撤销）。集合里的命令执行后，它读过的**所有文件**
+由 `tools/post-execute` 钩子自动补发观测——**不提供文件路径参数**（要指定文件直接 `read`）。
+配置落盘 `<DSH_HOME>/useful-tools/config.json`，钩子每次现读 ⇒ 命令配置一次、永久有效。
+- 依据：`lib/shared/mark_read/index.js`、`lib/core/mark-read/{config.js,hook.js}`、`read-commands.json`。
+- 验证：不传 `commands` 时按预置清单写入；`undo` 能从集合移除；改配置文件后下一次工具调用即生效。
+- 违反后果：做成按文件标记会偏离需求（用户明确要求「所有文件都生效」），且与「直接 read」重复。
+
 ---
 
 ## 2. 装配入口（cordis）

@@ -17,24 +17,29 @@
 
 | 工具 | 参数 | 简介 |
 |---|---|---|
-| `mark_read` | `paths` `file_path` `all` `undo` | 把文件标记为已读（按宿主同一 recipe 补发 `fs/observed`）⇒ 之后原生 write/edit 可直接改。`undo:true` 反向撤回，恢复「必须先读」门禁；`all:true` 作用于标记台账 |
+| `mark_read` | `commands` `undo` | 配置**读命令集合**：哪些命令（cat/grep/head/sed/awk…）读过的文件算已读。`commands` 可写命令串，也可传文件路径从文件读；不传用预置清单（`lib/core/mark-read/read-commands.json`）。`undo:true` 撤销这些命令。集合里的命令读过的**所有文件**自动生效，不用指定文件 |
 | `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去 |
 | `minihost` | `action` `plugin` `port` `path` `method` `body` `services` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求）；`services` 可注入宿主服务（插件依赖 storageDomain/sessions 等真实服务时用） |
 | `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` | **前端模拟**：插件预览页。`action=gen`（生成，无 spec 时自动挂载插槽组件）/ `serve`（启动，`backend` 可反代真实后端或 minihost）/ `stop` / `status` |
 | `verify_plugin` | `plugin` `source` `profile` `log` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码）。`plugin` 传插件名或根目录，缺省巡检所有已装插件 |
 | `test_env` | `action` `kind` `version` `root` `force` `plugin` `pluginName` `dir` `dshBin` | 测试环境（隔离实例）：`action=create`（创建）/ `start`（启动）/ `stop`（停止）/ `status`（状态）。独立 DSH_HOME + 自动端口，随便崩不碰主实例 |
-| 自动标记钩子 | 配置项 `observeHook` `observeTools` | 非工具能力：对配置集合里的工具（默认 `grep`）执行后自动补发观测，无需手动 mark |
+| 自动标记钩子 | 配置项 `observeHook` `observeTools` | 非工具能力：集合里的命令执行后自动把读过的文件补发观测（`tools/post-execute`），配置落盘 `<DSH_HOME>/useful-tools/config.json`、每次现读 |
 
 ## 用法
 
 ```
-mark_read  paths: "/volume1/xx/a.js,/volume1/xx/b.js"   # 逗号分隔一次多个
-mark_read undo:true file_path: "/volume1/xx/a.js"      # 撤销单个文件
-mark_read undo:true all:true                           # 全部还原成宿主原生状态
+mark_read commands: "cat,grep,head"        # 加入读命令集合（持久生效）
+mark_read                                   # 不传 commands = 用预置清单（21 个常见读文件命令）
+mark_read commands: "/tmp/cmds.txt"         # 从文件读命令集合（每行/逗号一个）
+mark_read commands: "grep" undo: true       # 撤销 grep（从集合移除）
 
-verify_plugin plugin: "dsh-git-push"                   # 验单个插件（也可传插件根目录）
-verify_plugin                                          # 巡检所有已装插件
+verify_plugin plugin: "dsh-git-push"        # 验单个插件（也可传插件根目录）
+verify_plugin                               # 巡检所有已装插件
 ```
+
+`mark_read` 的语义是**配置「哪些命令算读」**，不是逐个标记文件：集合里的命令执行后，
+它读过的**所有文件**自动补发观测（`tools/post-execute` 钩子），不需要指定文件——要指定文件直接 `read` 就行。
+集合落盘到 `<DSH_HOME>/useful-tools/config.json`，钩子每次现读，所以**配置一次、永久有效**（改完即时生效、重启仍在）。
 
 `verify_plugin` 给三项证据，专治「装完插件发现工具没出现」：
 
@@ -96,10 +101,20 @@ test_env { action: "stop" }                                      # 停止（按�
 sync_plugin { write: true, register: true, dshHome: "<环境目录>" }
 ```
 
-## 配置（设置 → 插件 → DSH 有用小工具）
+## 配置（`<DSH_HOME>/useful-tools/config.json`）
+
+```json
+{
+  "observeHook": true,
+  "observeTools": ["cat", "grep", "head", "sed", "awk"],
+  "testEnvRoot": "<可选，test_env 的环境根>"
+}
+```
 
 - `observeHook`：自动标记钩子总开关（默认开）
-- `observeTools`：读命令集合（逗号分隔，默认 `grep`）——**填什么、什么就生效**，改动即时生效无需重启
+- `observeTools`：读命令集合——**填什么、什么就生效**；钩子每次现读，改动即时生效无需重启
+- 也可以直接用 `mark_read` 工具改这个集合（`commands` 加入 / `undo` 撤销）
+- 预置清单：`lib/core/mark-read/read-commands.json`（21 个常见读文件命令）
 
 ## 语义与边界（实测结论）
 
@@ -171,7 +186,8 @@ preview { action: "list" }
 
 | 版本 | 变更 |
 | --- | --- |
-| 0.1.11 | `preview` 自动挂载修复 TDZ：`__ModuleLoader__.load` 只登记 entry，`factory` 统一延迟到 `setTimeout(0)`（client.js 整体执行完之后）再调用——插件常把 `load({...})` 写在顶层 `let/const` 之前，同步调 factory 会报 `Cannot access 'X' before initialization`。factory 抛错且命中该特征时，错误提示会注明「疑似 TDZ」。实测 dsh-skill-scoreboard：修复前无插槽可渲染，修复后 `#root` 渲染出真实界面。 |
+| 0.1.12 | `mark_read` 重做：语义从「按文件标记」改为「**读命令集合**」——两个参数 `commands`（命令串，或传文件路径从文件读，不传用预置清单 `read-commands.json`）+ `undo`（撤销）；集合里的命令读过的**所有文件**自动生效。配置落盘 `<DSH_HOME>/useful-tools/config.json`，钩子每次现读 ⇒ 命令配置一次、永久有效（改完即时生效、重启仍在）。移除 `paths` / `file_path` / `all`（要指定文件直接 `read`）。 |
+| 0.1.11 | `preview` 自动挂载修复 TDZ：`__ModuleLoader__.load` 只登记 entry，`factory` 统一延迟到 `setTimeout(0)`（client.js 整体执行完之后）再调用。实测 dsh-skill-scoreboard：修复前无插槽可渲染，修复后 `#root` 渲染出真实界面。 |
 | 0.1.10 | `minihost` 两处修复/增强：① 路由匹配只看 pathname（`/api/x?y=1` 不再 404）；② 新增 `services` 参数注入宿主服务。实测：`/templates?x=1` 由 404→200；注入 storageDomain 后 `/templates` 由 500→200 真实数据。 |
 | 0.1.9 | 测试环境根改为**配置驱动**：参数 `root` > `DSH_TEST_ENV_ROOT` > 插件配置 `<DSH_HOME>/useful-tools/config.json` 的 `testEnvRoot` > 推算。环境目录为 `<根>/<版本>@Save-test`，部署方按配置决定位置，不写死代码路径。 |
 | 0.1.8 | 新增 `test_env` 工具：测试环境（隔离实例）create/start/stop/status，独立 DSH_HOME + 自动端口（3083-3182），路径全由参数/环境决定。`sync_plugin` 增加 `dshHome`（缺省当前实例）、`pluginName`、`register`（写 profile 的 dependencies + bundles，并对齐 node_modules 副本），可把插件直接装进隔离实例。实测：同步 34 文件 + 注册成功，实例启动 `ready:true`、无 failed to import。 |
