@@ -171,7 +171,8 @@ preview { action: "list" }
 
 | 版本 | 变更 |
 | --- | --- |
-| 0.1.10 | `minihost` 两处修复/增强：① 路由匹配只看 pathname（`/api/x?y=1` 不再 404，旧实现拿含 query 的完整 URL 比对）；② 新增 `services` 参数注入宿主服务（模块默认导出服务对象或返回它的函数，覆盖同名默认服务）。实测：`/templates?x=1` 由 404→200；注入 storageDomain 后 `/templates` 由 500→200 真实数据。 |
+| 0.1.11 | `preview` 自动挂载修复 TDZ：`__ModuleLoader__.load` 只登记 entry，`factory` 统一延迟到 `setTimeout(0)`（client.js 整体执行完之后）再调用——插件常把 `load({...})` 写在顶层 `let/const` 之前，同步调 factory 会报 `Cannot access 'X' before initialization`。factory 抛错且命中该特征时，错误提示会注明「疑似 TDZ」。实测 dsh-skill-scoreboard：修复前无插槽可渲染，修复后 `#root` 渲染出真实界面。 |
+| 0.1.10 | `minihost` 两处修复/增强：① 路由匹配只看 pathname（`/api/x?y=1` 不再 404）；② 新增 `services` 参数注入宿主服务。实测：`/templates?x=1` 由 404→200；注入 storageDomain 后 `/templates` 由 500→200 真实数据。 |
 | 0.1.9 | 测试环境根改为**配置驱动**：参数 `root` > `DSH_TEST_ENV_ROOT` > 插件配置 `<DSH_HOME>/useful-tools/config.json` 的 `testEnvRoot` > 推算。环境目录为 `<根>/<版本>@Save-test`，部署方按配置决定位置，不写死代码路径。 |
 | 0.1.8 | 新增 `test_env` 工具：测试环境（隔离实例）create/start/stop/status，独立 DSH_HOME + 自动端口（3083-3182），路径全由参数/环境决定。`sync_plugin` 增加 `dshHome`（缺省当前实例）、`pluginName`、`register`（写 profile 的 dependencies + bundles，并对齐 node_modules 副本），可把插件直接装进隔离实例。实测：同步 34 文件 + 注册成功，实例启动 `ready:true`、无 failed to import。 |
 | 0.1.7 | `preview gen` 无 spec 时改为**通用自动挂载**：mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect），调插件 `apply(ctx)`，把 `slots.register(def, component)` 捕获到的组件 `createRoot().render()` 到 `#root`。实测 dsh-session-conductor（无 spec）：`#root` 1 个子节点 / 1378 字符 / 捕获 5 个插槽 / 0 错误 / 中文文案正常。spec 从此是可选的增强（自定义 mock 与首屏注入），不再是必填。 |

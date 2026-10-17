@@ -1,6 +1,6 @@
 {
   "name": "dsh-useful-tools",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "DSH 有用小工具箱：文件已读标记（mark_read）+ 插件同步（sync_plugin）+ mini 宿主（minihost_*）",
   "type": "module",
   "main": "lib/index.js",
