@@ -1,8 +1,11 @@
 /**
- * quick_command 单测：定义读写、run 持久化、管理动作、执行与超时。
+ * quick_command 单测：定义读写、run 持久化、管理动作、执行与超时、cwd。
  *
  * 隔离方式：每个用例把 DSH_HOME 指向 mkdtemp 出来的临时目录，结束恢复环境并删目录——
  *   不碰真实 <DSH_HOME>/useful-tools，也不在 /tmp 留残留。
+ *
+ * 跨平台：命令一律用 node -e 而不是 pwd/sleep/ls（那些只有某类 shell 有）；
+ *   glob 由 test/run-tests.mjs 扫描，本文件不依赖 shell 展开。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,21 +40,14 @@ function storeFile(home) {
  */
 const PRINT_CWD = 'node -e "process.stdout.write(process.cwd())"';
 
-test('list：首次没有文件时返回预置 restart，并标记 preset', async () => {
+test('list：首次没有文件时返回空表（不带任何内置预置）', async () => {
   await withHome(async (home) => {
     const r = await runQuickCommand({ action: 'list' });
     assert.equal(r.ok, true);
-    assert.equal(r.preset, true);
-    assert.ok(r.items.restart, '应带预置 restart');
-    assert.ok(r.items.restart.command.includes('restart'), '预置命令应是重启');
-    // start.sh 路径随机器变化：探测到就展开成绝对路径，探测不到保留 {startScript} 占位符
-    assert.ok(
-      r.items.restart.command.includes('start.sh') || r.items.restart.command.includes('{startScript}'),
-      '命令应指向 start.sh（探测到则展开，探测不到保留占位符）',
-    );
-    assert.ok(Array.isArray(r.list), 'list 应给出名字+命令的数组形态');
-    assert.equal(r.list[0].name, 'restart');
-    assert.ok(r.list[0].command.includes('restart'));
+    assert.equal(r.exists, false);
+    assert.equal(r.count, 0);
+    assert.deepEqual(r.list, []);
+    assert.ok(typeof r.note === 'string' && r.note.includes('add'), '空表应提示用 add 添加');
     assert.equal(existsSync(storeFile(home)), false, 'list 不应写盘');
   });
 });
@@ -64,10 +60,10 @@ test('add：写盘且能 list 到；重名报错', async () => {
 
     const raw = JSON.parse(readFileSync(storeFile(home), 'utf8'));
     assert.deepEqual(raw.hello, { command: 'echo hi', description: '打招呼' });
-    assert.ok(raw.restart, '首次写盘应把预置一并保留');
+    assert.deepEqual(Object.keys(raw), ['hello'], '文件里只应有用户定义，没有预置');
 
     const list = await runQuickCommand({ action: 'list' });
-    assert.equal(list.preset, false);
+    assert.equal(list.exists, true);
     assert.ok(list.items.hello);
 
     const dup = await runQuickCommand({ action: 'add', name: 'hello', command: 'echo again' });
@@ -88,14 +84,14 @@ test('edit：只改命令时保留原说明', async () => {
   });
 });
 
-test('delete：移除后不会把预置写回', async () => {
+test('delete：移除后文件里不再有该名字', async () => {
   await withHome(async (home) => {
-    const deleted = await runQuickCommand({ action: 'delete', name: 'restart' });
+    await runQuickCommand({ action: 'add', name: 'gone', command: 'echo x' });
+    const deleted = await runQuickCommand({ action: 'delete', name: 'gone' });
     assert.equal(deleted.ok, true);
+    assert.deepEqual(deleted.remaining, []);
     const raw = JSON.parse(readFileSync(storeFile(home), 'utf8'));
-    assert.equal(raw.restart, undefined, 'delete 后不应被写回');
-    const list = await runQuickCommand({ action: 'list' });
-    assert.equal(list.items.restart, undefined);
+    assert.equal(raw.gone, undefined);
   });
 });
 
@@ -134,12 +130,12 @@ test('run：只传 command 没有 name 时报错（命令必须能落盘）', as
   });
 });
 
-test('run：未知名字报错并给出可选名字', async () => {
+test('run：未知名字报错并给出空的可选名字', async () => {
   await withHome(async () => {
     const r = await runQuickCommand({ action: 'run', name: 'nope' });
     assert.equal(r.ok, false);
-    assert.ok(Array.isArray(r.names));
-    assert.ok(r.names.includes('restart'));
+    assert.deepEqual(r.names, [], '空表时可选名字应为空数组');
+    assert.match(r.error, /未定义快捷命令/);
   });
 });
 
@@ -160,7 +156,7 @@ test('非法快捷名被拒（不写进 JSON）', async () => {
   });
 });
 
-test('cwd：add 带目录，run 时在该目录执行（pwd 输出即它）', async () => {
+test('cwd：add 带目录，run 时在该目录执行', async () => {
   await withHome(async (home) => {
     const dir = join(home, 'workdir');
     mkdirSync(dir, { recursive: true });
@@ -170,7 +166,7 @@ test('cwd：add 带目录，run 时在该目录执行（pwd 输出即它）', as
     const r = await runQuickCommand({ action: 'run', name: 'pwdin' });
     assert.equal(r.ok, true);
     // 用 realpath 比较：os.tmpdir() 是逻辑路径（/var/packages/.../tmp），
-    //   而命令里的 pwd 输出物理路径（/volume1/@apptemp/...），同一目录两种视图
+    //   而命令里的 getcwd 输出物理路径（/volume1/@apptemp/...），同一目录两种视图
     assert.equal(realpathSync(r.stdout.trim()), realpathSync(dir));
     assert.equal(r.cwd, dir);
   });

@@ -1,6 +1,6 @@
 {
   "name": "dsh-useful-tools",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "description": "DSH 有用小工具箱：命令读文件自动算已读（mark_read）+ 插件同步（sync_plugin）+ 后端模拟（minihost）+ 前端预览（preview）+ 插件验证（verify_plugin）+ 测试环境（test_env）",
   "type": "module",
   "main": "lib/index.js",
@@ -21,7 +21,7 @@
     }
   },
   "scripts": {
-    "test": "node --test \"test/*.test.mjs\""
+    "test": "node test/run-tests.mjs"
   },
   "license": "MIT",
   "author": "EIGHTfs",

@@ -9,7 +9,7 @@
 | 工具 | 参数 | 简介 |
 |---|---|---|
 | `mark_read` | `commands` `undo` | 配置**读命令集合** + **自动标记钩子**（两者是同一功能）。`commands` 写命令串 / 传文件路径 / 不传用预置清单（`lib/core/mark-read/read-commands.json`）；`undo:true` 撤销。**两种读法都算**：① 宿主工具（如 `grep` 工具）；② `bash` 里跑的命令（`cat a.txt`、`grep x b.txt`）。跨平台别名归一：`Get-Content`/`gc`/`type`/`more` → cat，`Select-String`/`sls`/`findstr` → grep。集合里的命令执行后，钩子（`tools/post-execute`）自动把它读过的**所有文件**补发观测，不用指定文件；配置落盘 `<DSH_HOME>/useful-tools/config.json`、每次现读 ⇒ 配置一次永久有效 |
-| `quick_command` | `action` `name` `command` `cwd` `description` `timeoutMs` | **快捷命令**：执行/管理 `<DSH_HOME>/useful-tools/quick-commands.json` 里定义的命令。`action=run`（缺省，按 `name` 执行；同时传 `command` 会**先持久化再执行**，等效 add 后执行）/ `add` / `edit` / `delete` / `list`（列出所有名字+命令）。`cwd` 指定执行目录（缺省空 = 宿主进程 cwd）。预置 `restart` = `start.sh restart`（后台延迟 2 秒，会重启 DSH、断开当前连接；Linux/macOS 命令，Windows 需 edit 改） |
+| `quick_command` | `action` `name` `command` `cwd` `description` `timeoutMs` | **快捷命令**：执行/管理 `<DSH_HOME>/useful-tools/quick-commands.json` 里定义的命令。`action=run`（缺省，按 `name` 执行；同时传 `command` 会**先持久化再执行**，等效 add 后执行）/ `add` / `edit` / `delete` / `list`（列出所有名字+命令）。`cwd` 指定执行目录（缺省空 = 宿主进程 cwd）。**无内置预置**：定义完全来自该文件，首次是空表；重启 DSH 这类命令由使用方自己 `add` |
 | `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去 |
 | `minihost` | `action` `plugin` `port` `path` `method` `body` `services` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求）；`services` 可注入宿主服务（插件依赖 storageDomain/sessions 等真实服务时用） |
 | `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` `host` `lan` | **前端模拟**：插件预览页。`action=gen`（生成，无 spec 时自动挂载插槽组件）/ `serve`（启动，`backend` 可反代真实后端或 minihost；`host=0.0.0.0` 或 `lan:true` 监听局域网并返回 `lanUrl`）/ `stop` / `status` |
@@ -119,15 +119,15 @@ sync_plugin { write: true, register: true, dshHome: "<环境目录>" }
 }
 ```
 
-- 首次使用没有该文件时自动带预置 `restart`：`start.sh` 路径按 `DSH_START_SCRIPT` 环境变量或常见安装位探测，
-  探测不到就保留占位符（执行时报错暴露，不静默跑错命令）。
+- **无内置预置**：文件不存在时是空表（`list` 返回 `count:0` 并提示用 `add`），定义完全由使用方创建。
+  例如本机重启 DSH：
+  `add name:"restart" command:"nohup sh -c 'sleep 2; /var/packages/DeepSeekHarness-NAS/target/start.sh restart' >/dev/null 2>&1 &"`
+  （后台化以免重启杀掉进程后拿不到结果；该形态仅 Linux/macOS，Windows 换对应重启命令）。
 - `run` 只执行 JSON 里已定义的命令；**同时传 `command` 时先写入 JSON（新增或更新）再执行**，不是临时执行。
 - `cwd` 指定执行目录：缺省空 = 沿用**宿主进程的 cwd**（不一定是当前工作区）；
   传了会校验「存在且是目录」，并解析成绝对路径。`add`/`edit`/`run` 带 `command` 时随定义落盘，
   `run` 单独传 `cwd` 只对本次执行生效、不改已有定义。
 - 执行走 `bash -c`（Windows `cmd /c`），默认超时 60 秒，stdout/stderr 各截断 20000 字符。
-- `restart` 会重启 DSH 并断开当前连接：预置命令已后台化（`nohup` + 延迟 2 秒），工具先返回「已触发」。
-  该命令是 Linux/macOS 形态，Windows 上请用 `edit` 换成对应重启命令。
 
 ## 配置（`<DSH_HOME>/useful-tools/config.json`）
 
@@ -217,6 +217,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.21 | `quick_command` 去掉内置预置：定义完全来自 `<DSH_HOME>/useful-tools/quick-commands.json`，首次是空表（`list` 返回 `count:0` 并提示用 add），`restart` 这类本机命令由使用方自己 add。测试入口改为跨平台 runner `node test/run-tests.mjs`（自扫 `*.test.mjs`，不依赖 Node 20 不支持的 glob 与 Windows 不展开的通配符）。 |
 | 0.1.20 | `quick_command` 支持 `cwd` 执行目录：缺省空 = 宿主进程 cwd，传了先校验「存在且是目录」并解析成绝对路径；`add`/`edit`/`run` 带 `command` 时随定义落盘，`run` 单独传只对本次生效。跨平台加固：单测不再依赖 shell 内置命令（用 node 打印 cwd）、测试文件统一改名 `*.test.mjs` 用 Node 自身展开 glob，CI 矩阵增加 `windows-latest`。 |
 | 0.1.19 | 新增 `useful_tools` 工具：动态扫描 `lib/shared` 输出本插件全部工具（名字/说明/参数/示例调用），`action=help`（缺省）/ `list`，`tool` 可只看单个。另修 `quick_command` 预置命令在探测不到 `start.sh` 时把占位符替换成空串的问题（改为保留 `{startScript}`，执行时报错暴露）。 |
 | 0.1.18 | 新增 `quick_command` 工具：快捷命令定义存 `<DSH_HOME>/useful-tools/quick-commands.json`，`action=run`（缺省，按 name 执行；带 command 时先持久化再执行）/ `add` / `edit` / `delete` / `list`（列出所有名字+命令）；预置 `restart` = `start.sh restart`（后台延迟 2 秒，会断开当前连接）。执行走 `bash -c`、默认超时 60 秒、输出截断 20000 字符。 |

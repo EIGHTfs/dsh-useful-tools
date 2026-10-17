@@ -86,16 +86,16 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ### C-110 quick_command 是配置驱动的快捷命令
 定义存 `<DSH_HOME>/useful-tools/quick-commands.json`（结构 `{名字: {command, description, cwd}}`，兼容值为纯字符串）。
+**无内置预置**：文件不存在时是空表（`list` 返回 `count:0` 并提示用 add），定义完全由使用方创建。
 `action=run`（缺省）按 `name` 执行已定义命令；**同时传 `command` 时先 upsert 写入 JSON 再执行**（等效 add 后执行），
 不提供「只传 command、不落盘」的临时执行。`add` / `edit` / `delete` 管理定义，`list` 列出所有名字+命令。
-预置定义在 `lib/core/quick-command/preset.json`（`restart` 指向探测到的 `start.sh`），首次使用自动带出。
 `cwd`：缺省空 = 沿用宿主进程 cwd；传了必须**存在且是目录**，并解析成绝对路径。
 `add`/`edit`/`run` 带 `command` 时随定义落盘；`run` 单独传 `cwd` 只影响本次执行，不改已有定义。
-跨平台：Linux/macOS 走 `bash -c`，Windows 走 `cmd /c`；预置 `restart` 是 Linux/macOS 形态，Windows 需 `edit` 替换。
-- 依据：`lib/shared/quick_command/index.js`、`lib/core/quick-command/{store,exec,locate}.js`、`preset.json`。
-- 验证：`test/quick-command.test.mjs` 覆盖 list/add/edit/delete/run/超时/非法名/cwd（含不存在的目录被拒）；
-  `run` 带 command 后文件里应有该名字。
-- 违反后果：做成临时执行会让「run 一次、下次还在」的预期落空；不落盘则重启后快捷命令消失；
+跨平台：Linux/macOS 走 `bash -c`，Windows 走 `cmd /c`；命令形态由使用方自定（插件不预置任何平台相关命令）。
+- 依据：`lib/shared/quick_command/index.js`、`lib/core/quick-command/{store,exec}.js`。
+- 验证：`test/quick-command.test.mjs` 覆盖 空表 list / add / edit / delete / run / 超时 / 非法名 / cwd（含不存在的目录被拒）；
+  首次 `list` 的 `count` 必须为 0，`add` 后文件里只应有用户定义（不得出现任何内置预置）。
+- 违反后果：内置预置会把「本机专属命令」塞给所有部署方；不落盘则重启后快捷命令消失；
   不校验 cwd 会把「路径写错」拖到执行时才暴露。
 
 ---
@@ -228,9 +228,11 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
-- 依据：`test/` 现有 7 份测试，`package.json` 的 `test` 脚本为 `node --test "test/*.test.mjs"`（glob 由 Node 自己展开，Windows 的 shell 不展开也不影响）。
+- 依据：`test/` 现有 7 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
+- 入口：`test/run-tests.mjs` 自己扫描 `*.test.mjs` 再把文件列表传给 `node --test`——不依赖 glob
+  （Node 20 不支持 `--test` 的 glob，Windows 的 shell 也不展开通配符）。
 - CI：`.github/workflows/test.yml` 在 push master 与 PR 时用 `ubuntu-latest` + `windows-latest` × Node 20/22/24 矩阵跑同一命令（零依赖，无需 npm install）。
-- 验证：`npm test`（或 `node --test "test/*.test.mjs"`）全绿。
+- 验证：`npm test` 全绿。
 - 跨平台：测试里不得依赖 shell 内置命令（`pwd`/`sleep`/`ls` 只有某类 shell 有），一律用 `node -e` 代替。
 - 违反后果：装配类 bug 只能靠宿主日志发现（本次 `Invalid effect` 藏了很久）。
 
@@ -269,6 +271,7 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.21 | C-110 明确「无内置预置」（定义只来自 quick-commands.json，首次为空表）；C-601 单测入口改为 `test/run-tests.mjs`（自扫文件，不依赖 glob）。 |
 | 0.1.20 | C-110 补 `cwd` 语义（缺省宿主 cwd、必须存在且是目录）与跨平台要求（`bash -c` / `cmd /c`，预置 restart 仅 Linux/macOS）；C-601 单测入口改为 Node 自身展开的 glob、CI 增加 `windows-latest`、明确测试不得依赖 shell 内置命令。 |
 | 0.1.16 | C-402 允许探测候选（环境变量/参数优先、不得作为唯一来源）；C-601 测试数改 5 份；补记 0.1.9 / 0.1.10 / 0.1.13 三次契约内容更新。 |
 | 0.1.13 | C-109 补「bash 命令串也算读」与跨平台别名归一。 |
