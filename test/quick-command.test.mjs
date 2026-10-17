@@ -141,7 +141,8 @@ test('run：未知名字报错并给出空的可选名字', async () => {
 
 test('run：超时会被终止并标记 timedOut', async () => {
   await withHome(async () => {
-    await runQuickCommand({ action: 'add', name: 'slow', command: 'node -e "setTimeout(()=>{},5000)"' });
+    // 阻塞命令必须避免 `>`（cmd 会当输出重定向把命令截断），所以用 function 形态而不是箭头函数
+    await runQuickCommand({ action: 'add', name: 'slow', command: 'node -e "setTimeout(function(){},5000)"' });
     const r = await runQuickCommand({ action: 'run', name: 'slow', timeoutMs: 1000 });
     assert.equal(r.ok, false);
     assert.equal(r.timedOut, true);
