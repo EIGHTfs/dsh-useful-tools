@@ -93,3 +93,10 @@ tool_preview_stop  { port | file } · tool_preview_list {}
 ```
 
 实测（2026-10-17）：夹具插件 gen 产出 1.14MB 单文件 → serve 200 → 页面含预期标记 → stop 清台账 ✓。
+
+## 版本记录
+
+| 版本 | 变更 |
+| --- | --- |
+| 0.1.1 | 修复装配入口 `apply` 返回普通对象的问题：cordis 把 apply 返回值当 effect 收集，普通对象会抛 `TypeError: Invalid effect`，整条插件 fiber 随即卸载，四个工具与同名指令全部不注册。改为只写日志、不返回值。 |
+| 0.1.0 | 首个版本：`mark_read` / `sync_plugin` / `minihost` / `preview` 四工具 + 同名斜杠指令 + 自动标记钩子。 |
