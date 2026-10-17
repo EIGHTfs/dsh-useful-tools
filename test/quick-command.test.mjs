@@ -45,7 +45,7 @@ test('list：首次没有文件时返回预置 restart，并标记 preset', asyn
     );
     assert.ok(Array.isArray(r.list), 'list 应给出名字+命令的数组形态');
     assert.equal(r.list[0].name, 'restart');
-    assert.ok(r.list[0].command.includes('start.sh'));
+    assert.ok(r.list[0].command.includes('restart'));
     assert.equal(existsSync(storeFile(home)), false, 'list 不应写盘');
   });
 });
