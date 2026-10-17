@@ -1,6 +1,6 @@
 # dsh-useful-tools · DSH 有用小工具箱
 
-小工具集合插件。**mark_read** 配置「读命令集合」——哪些命令（cat/grep/head/sed/awk…）读过的文件算已读，
+小工具集合插件。**mark_read** 让指定命令（cat/grep/head/sed/awk…）读过的文件自动算已读，
 解决官方原生 write/edit 的「cannot modify "…": file has not been read」门禁误伤
 （内容明明已经用 grep/脚本等方式看过，原生写仍要求先用 read 工具读一遍）。
 
