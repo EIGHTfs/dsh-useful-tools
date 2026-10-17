@@ -1,0 +1,11 @@
+
+╔════════════════════════════════════════════════════╗
+║  DSH 插件 mini-host（本地跑插件服务端代码 · 改完刷新即生效）
+╚════════════════════════════════════════════════════╝
+  插件:     /volume1/VirtualDSM/DeepSeekHarness/工作区/dsh-git-push
+  预览页:   http://127.0.0.1:31202/
+  工作区:   /volume1/VirtualDSM/DeepSeekHarness/工作区
+  模式:     每请求 fork 子进程（无需重启宿主/本服务）
+  停止:     Ctrl+C
+
+[minihost] GET / → 404 2003ms ⚠ mini-host: 插件未注册匹配 / 的路由
