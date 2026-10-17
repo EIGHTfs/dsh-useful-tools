@@ -43,6 +43,14 @@
 - 验证：`minihost start` 后把 `preview serve` 的 `backend` 指向该端口，页面 `/api/*` 应返回 minihost 的响应。
 - 违反后果：两个工具各自能跑但串不起来，模拟链路断在前端或后端。
 
+### C-106 预览页无 spec 兜底
+`preview gen` 在插件没有 `assets/preview.spec.mjs` 时按默认垫片生成页面，返回里带 `note` 说明
+（「未找到 preview.spec.mjs，已按默认垫片生成（不含插件自定义 mock）」）；
+**显式传入不存在的 spec 路径仍然报错**——那是调用方指错了文件，不能静默降级。
+- 依据：`lib/core/preview/gen.js` 的 `generatePreview`。
+- 验证：对无 spec 的插件跑 `preview gen` 应 `ok:true` 且带 `note`；`spec` 指向不存在文件应 `ok:false`。
+- 违反后果：插件没写 spec 就完全用不了预览；或指错文件被静默降级、生成出看不懂的页面。
+
 ---
 
 ## 2. 装配入口（cordis）

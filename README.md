@@ -21,7 +21,7 @@
 | `mark_read（undo:true）` | 反向撤回：让原生写对该文件恢复「必须先读」门禁 |
 | `sync_plugin` | 把插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`write:true` 真写） |
 | `minihost` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来（start 启动 / stop 停止 / status 状态 / call 请求） |
-| `preview` | **前端模拟**：插件预览页（gen 生成 / serve 启动，可反代真实后端或 minihost / stop / status） |
+| `preview` | **前端模拟**：插件预览页（gen 生成，无 spec 时按默认垫片 / serve 启动，可反代真实后端或 minihost / stop / status） |
 | `verify_plugin` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码） |
 | 自动标记钩子 | 对配置集合里的工具（默认 `grep`）执行后自动补发观测，无需手动 mark |
 
@@ -56,7 +56,7 @@ verify_plugin                                          # 巡检所有已装插�
 
 ```
 minihost { action: "start", plugin: "<插件根>", port: 31177 }          # ① 起后端（插件服务端代码）
-preview  { action: "gen",   plugin: "<插件根>" }                        # ② 生成前端预览页
+preview  { action: "gen",   plugin: "<插件根>" }                        # ② 生成前端预览页（无 spec 时按默认垫片，返回带 note）
 preview  { action: "serve", file: "<插件根>/assets/preview.html", backend: "http://127.0.0.1:31177" }
                                                                         # ③ 起前端，/api/* 打到 ①
 minihost { action: "status" } · preview { action: "status" }            # 查状态
@@ -138,6 +138,7 @@ preview { action: "list" }
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.6 | `preview gen` 支持无 spec 兜底：插件没有 `assets/preview.spec.mjs` 时按默认垫片生成页面，返回带 `note`（「未找到 preview.spec.mjs，已按默认垫片生成（不含插件自定义 mock）」）；显式传入不存在的 spec 路径仍报错，不静默降级。 |
 | 0.1.5 | 启停状态统一走工具参数：`preview` 与 `minihost` 新增 `status`（等价 `list`，语义直白，旧名保留）。新增 [docs/NOT-DONE.md](docs/NOT-DONE.md) 记录三项未实现能力（预览页截图、自包含快照、shell 启动器）的评估结论与不做原因。 |
 | 0.1.4 | 契约独立成文：[docs/CONTRACT.md](docs/CONTRACT.md)（编号 C-101~C-703，含命名/装配/部署/依赖/验证/测试/版本）。README 只保留门面与文档索引，契约细节改为引用，不再两处重复。`docs/` 纳入同步清单。 |
 | 0.1.3 | 新增 `verify_plugin`：验证任意 DSH 插件的装载与工具注册（装配结构静态分析 + 部署一致性 + 宿主日志；只读文件、不执行被验证插件的代码），支持传插件名或根目录，缺省巡检所有已装插件。 |
