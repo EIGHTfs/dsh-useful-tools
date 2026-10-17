@@ -43,13 +43,15 @@
 - 验证：`minihost start` 后把 `preview serve` 的 `backend` 指向该端口，页面 `/api/*` 应返回 minihost 的响应。
 - 违反后果：两个工具各自能跑但串不起来，模拟链路断在前端或后端。
 
-### C-106 预览页无 spec 兜底
-`preview gen` 在插件没有 `assets/preview.spec.mjs` 时按默认垫片生成页面，返回里带 `note` 说明
-（「未找到 preview.spec.mjs，已按默认垫片生成（不含插件自定义 mock）」）；
-**显式传入不存在的 spec 路径仍然报错**——那是调用方指错了文件，不能静默降级。
-- 依据：`lib/core/preview/gen.js` 的 `generatePreview`。
-- 验证：对无 spec 的插件跑 `preview gen` 应 `ok:true` 且带 `note`；`spec` 指向不存在文件应 `ok:false`。
-- 违反后果：插件没写 spec 就完全用不了预览；或指错文件被静默降级、生成出看不懂的页面。
+### C-106 预览页无 spec 兜底（通用自动挂载）
+`preview gen` 在插件没有 `assets/preview.spec.mjs` 时用**通用自动挂载垫片**生成页面：
+mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect），调用插件的 `apply(ctx)`，
+把 `slots.register(def, component)` 捕获到的组件用 `createRoot().render()` 挂到 `#root`；返回带 `note` 与 `autoMount:true`。
+- **显式**传入不存在的 spec 路径仍然报错——调用方指错了文件，不静默降级。
+- 自动挂载是**尽力而为**：组件依赖宿主 hooks/context 时渲染失败，页面显示错误与已捕获插槽清单，**不白屏**。
+- 依据：`lib/core/preview/gen.js` + `lib/core/preview/auto-harness.js`。
+- 验证：对无 spec 的 dsh-session-conductor 跑 `gen` → 页面 `#root` 有 1 个子节点 / 1378 字符 / 捕获 5 个插槽 / 0 错误。
+- 违反后果：没 spec 的插件只能看到空壳；或渲染失败白屏、无从判断原因。
 
 ---
 
