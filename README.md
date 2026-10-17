@@ -179,6 +179,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.17 | 新增单测 CI：`.github/workflows/test.yml`，push 到 master 与所有 PR 触发，Node 20/22/24 矩阵跑 `node --test test/*.mjs`（测试零依赖，无需 npm install）。 |
 | 0.1.16 | 修 `sync_plugin` 源目录 bug：缺省 `source` 少上溯两层（停在 `lib/core`），`packageFilesOf` 读不到 `package.json`，每次同步都是「0 文件空操作」却返回 `ok:true`——已改为上溯三层（`tools.js` 用 `fileURLToPath`，`sync-plugin.mjs` 的 `SOURCE_ROOT` 同步修正），实测同步写入 5 文件、副本 README/package.json 一致。另：README 示例地址改 `<本机IP>` 占位（不再写本机回环）；CONTRACT C-402 改为「允许探测候选、环境变量/参数优先且不得作为唯一来源」，C-601 测试数改 5 份，补记 0.1.9/0.1.10/0.1.13 契约更新；sync-plugin 顶部注释与 files 白名单对齐。 |
 | 0.1.15 | 修 minihost 启动 TDZ 回归：`host.mjs` 的 `TIMEOUT_MS` 引用了后面才定义的 `DEFAULT_TIMEOUT_MS`（`Cannot access before initialization`），已把常量定义前移；实测 `minihost start` 正常、请求 200。另在 preview/minihost 工具描述里注明「参数定义在实例加载期注册，更新插件后需重载实例」。 |
 | 0.1.14 | `preview serve` 支持局域网访问：新增 `host`（缺省仅监听本机回环，可传 0.0.0.0）与 `lan:true`（等价 0.0.0.0）；监听 0.0.0.0 时返回 `lanUrl`（本机第一个非回环 IPv4，如 `http://10.10.31.218:31200/`），原 `url` 保留本机回环地址。实测：`ss` 显示 `0.0.0.0:31200 LISTEN`，局域网与回环均 200。 |

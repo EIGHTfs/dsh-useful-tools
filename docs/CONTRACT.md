@@ -203,6 +203,7 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
 - 依据：`test/` 现有 5 份测试，`package.json` 的 `test` 脚本为 `node --test test/*.mjs`。
+- CI：`.github/workflows/test.yml` 在 push master 与 PR 时用 Node 20/22/24 矩阵跑同一命令（零依赖，无需 npm install）。
 - 验证：`npm test`（或 `node --test test/*.mjs`）全绿。
 - 违反后果：装配类 bug 只能靠宿主日志发现（本次 `Invalid effect` 藏了很久）。
 

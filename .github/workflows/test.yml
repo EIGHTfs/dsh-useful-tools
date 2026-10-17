@@ -1,0 +1,24 @@
+# 单测 CI：push 到 master 与所有 PR 都跑一遍 node --test。
+# 测试零依赖（只用 node:test / node:assert），因此不需要 npm install，也没有缓存可做。
+# 矩阵覆盖 DSH 部署常见的 Node 版本；fail-fast 关闭，一次能看到全部版本的结果。
+name: test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run tests
+        run: node --test test/*.mjs
