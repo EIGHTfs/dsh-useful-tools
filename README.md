@@ -10,23 +10,23 @@
 
 ## 开发者能力（本插件自带）
 
-- `sync_plugin` 工具 / `/sync-plugin` 指令：把本插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`--write` 真写；软链布局下免重启热重载）——由原 dsh-git-push 的 sync-plugin.mjs 收编而来
+- `ut_sync_plugin` 工具 / `/sync-plugin` 指令：把本插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`--write` 真写；软链布局下免重启热重载）——由原 dsh-git-push 的 sync-plugin.mjs 收编而来
 - `assets/dsh-plugin-minihost.mjs` + `dsh-plugin-minihost-child.mjs`：通用插件 minihost（模拟装配 / dev 直通），散落各处的副本归拢于此；用到 minihost 的插件建议改为引用本插件能力
 
 ## 功能
 
 | 工具 | 作用 |
 |---|---|
-| `mark_read` | 把文件标记为已读（按宿主同一 recipe 补发 `fs/observed`）⇒ 之后原生 write/edit 可直接改 |
-| `unmark_read` | 反向撤回：让原生写对该文件恢复「必须先读」门禁 |
+| `ut_mark_read` | 把文件标记为已读（按宿主同一 recipe 补发 `fs/observed`）⇒ 之后原生 write/edit 可直接改 |
+| `ut_mark_read（undo:true）` | 反向撤回：让原生写对该文件恢复「必须先读」门禁 |
 | 自动标记钩子 | 对配置集合里的工具（默认 `grep`）执行后自动补发观测，无需手动 mark |
 
 ## 用法
 
 ```
-mark_read  paths: "/volume1/xx/a.js,/volume1/xx/b.js"   # 逗号分隔一次多个
-mark_read undo:true file_path: "/volume1/xx/a.js"      # 撤销单个文件
-mark_read undo:true all:true                           # 全部还原成宿主原生状态
+ut_mark_read  paths: "/volume1/xx/a.js,/volume1/xx/b.js"   # 逗号分隔一次多个
+ut_mark_read undo:true file_path: "/volume1/xx/a.js"      # 撤销单个文件
+ut_mark_read undo:true all:true                           # 全部还原成宿主原生状态
 ```
 
 ## 配置（设置 → 插件 → DSH 有用小工具）
@@ -54,9 +54,9 @@ DSH 0.2.1-alpha.2+。装好后需重启 DSH 生效（工具与钩子在启动时
 
 | 功能域 | 目录 | 工具（toolcall） | 指令（斜杠命令） | 核心文件 |
 |---|---|---|---|---|
-| 文件已读标记 | `lib/mark-read/` | `mark_read` | `/mark-read` | `observe.js`（补发+台账）· `hook.js`（自动标记钩子） |
-| 插件同步 | `lib/plugin-sync/` | `sync_plugin` | `/sync-plugin` | `tools.js` · `sync-plugin.mjs`（CLI 同款）· `install.mjs` · `fsx.js` |
-| mini 宿主 | `lib/minihost/` | `minihost_start/call/stop/list` | `/minihost` | `tools.js` · `host.mjs`（主）· `host-child.mjs`（每请求子进程） |
+| 文件已读标记 | `lib/mark-read/` | `ut_mark_read` | `/mark-read` | `observe.js`（补发+台账）· `hook.js`（自动标记钩子） |
+| 插件同步 | `lib/plugin-sync/` | `ut_sync_plugin` | `/sync-plugin` | `tools.js` · `sync-plugin.mjs`（CLI 同款）· `install.mjs` · `fsx.js` |
+| mini 宿主 | `lib/minihost/` | `ut_minihost_start/call/stop/list` | `/minihost` | `tools.js` · `host.mjs`（主）· `host-child.mjs`（每请求子进程） |
 
 命名规范：**目录 = 功能域 kebab-case；工具 = 域名_动词；指令 = 域名-动词；文件按角色命名**（tools/host/hook/observe）。
 入口 `lib/index.js` 只做装配（逐域 register*），不含业务逻辑。
@@ -75,9 +75,9 @@ DSH 0.2.1-alpha.2+。装好后需重启 DSH 生效（工具与钩子在启动时
 
 ```bash
 # 工具
-preview_gen   { plugin: "<插件根>", spec?, out? }      # 生成单文件 preview.html（内联 React UMD）
-preview_serve { file: "<preview.html>", port?, backend? }  # 起服务；给 backend 则 /api/* 反代真实后端
-preview_stop  { port | file } · preview_list {}
+ut_preview_gen   { plugin: "<插件根>", spec?, out? }      # 生成单文件 preview.html（内联 React UMD）
+ut_preview_serve { file: "<preview.html>", port?, backend? }  # 起服务；给 backend 则 /api/* 反代真实后端
+ut_preview_stop  { port | file } · ut_preview_list {}
 # 指令
 /preview gen <插件根> · /preview serve <html> [端口] [backend] · /preview stop <端口> · /preview list
 ```
