@@ -1,0 +1,6 @@
+{
+  "restart": {
+    "command": "nohup sh -c 'sleep 2; \"{startScript}\" restart' >/dev/null 2>&1 &",
+    "description": "重启 DSH 主实例：后台延迟 2 秒执行 start.sh restart，当前连接会断"
+  }
+}

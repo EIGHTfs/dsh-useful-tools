@@ -84,6 +84,17 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ---
 
+### C-110 quick_command 是配置驱动的快捷命令
+定义存 `<DSH_HOME>/useful-tools/quick-commands.json`（结构 `{名字: {command, description}}`，兼容值为纯字符串）。
+`action=run`（缺省）按 `name` 执行已定义命令；**同时传 `command` 时先 upsert 写入 JSON 再执行**（等效 add 后执行），
+不提供「只传 command、不落盘」的临时执行。`add` / `edit` / `delete` 管理定义，`list` 列出所有名字+命令。
+预置定义在 `lib/core/quick-command/preset.json`（`restart` 指向探测到的 `start.sh`），首次使用自动带出。
+- 依据：`lib/shared/quick_command/index.js`、`lib/core/quick-command/{store,exec,locate}.js`、`preset.json`。
+- 验证：`test/quick-command.test.mjs` 覆盖 list/add/edit/delete/run/超时/非法名；`run` 带 command 后文件里应有该名字。
+- 违反后果：做成临时执行会让「run 一次、下次还在」的预期落空；不落盘则重启后快捷命令消失。
+
+---
+
 ## 2. 装配入口（cordis）
 
 ### C-201 入口必须导出 `apply`
@@ -202,7 +213,7 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
-- 依据：`test/` 现有 5 份测试，`package.json` 的 `test` 脚本为 `node --test test/*.mjs`。
+- 依据：`test/` 现有 6 份测试，`package.json` 的 `test` 脚本为 `node --test test/*.mjs`。
 - CI：`.github/workflows/test.yml` 在 push master 与 PR 时用 Node 20/22/24 矩阵跑同一命令（零依赖，无需 npm install）。
 - 验证：`npm test`（或 `node --test test/*.mjs`）全绿。
 - 违反后果：装配类 bug 只能靠宿主日志发现（本次 `Invalid effect` 藏了很久）。

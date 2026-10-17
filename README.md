@@ -9,6 +9,7 @@
 | 工具 | 参数 | 简介 |
 |---|---|---|
 | `mark_read` | `commands` `undo` | 配置**读命令集合** + **自动标记钩子**（两者是同一功能）。`commands` 写命令串 / 传文件路径 / 不传用预置清单（`lib/core/mark-read/read-commands.json`）；`undo:true` 撤销。**两种读法都算**：① 宿主工具（如 `grep` 工具）；② `bash` 里跑的命令（`cat a.txt`、`grep x b.txt`）。跨平台别名归一：`Get-Content`/`gc`/`type`/`more` → cat，`Select-String`/`sls`/`findstr` → grep。集合里的命令执行后，钩子（`tools/post-execute`）自动把它读过的**所有文件**补发观测，不用指定文件；配置落盘 `<DSH_HOME>/useful-tools/config.json`、每次现读 ⇒ 配置一次永久有效 |
+| `quick_command` | `action` `name` `command` `description` `timeoutMs` | **快捷命令**：执行/管理 `<DSH_HOME>/useful-tools/quick-commands.json` 里定义的命令。`action=run`（缺省，按 `name` 执行；同时传 `command` 会**先持久化再执行**，等效 add 后执行）/ `add` / `edit` / `delete` / `list`（列出所有名字+命令）。预置 `restart` = `start.sh restart`（后台延迟 2 秒，会重启 DSH、断开当前连接） |
 | `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去 |
 | `minihost` | `action` `plugin` `port` `path` `method` `body` `services` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求）；`services` 可注入宿主服务（插件依赖 storageDomain/sessions 等真实服务时用） |
 | `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` `host` `lan` | **前端模拟**：插件预览页。`action=gen`（生成，无 spec 时自动挂载插槽组件）/ `serve`（启动，`backend` 可反代真实后端或 minihost；`host=0.0.0.0` 或 `lan:true` 监听局域网并返回 `lanUrl`）/ `stop` / `status` |
@@ -25,6 +26,13 @@ mark_read commands: "grep" undo: true       # 撤销 grep（从集合移除）
 
 verify_plugin plugin: "dsh-git-push"        # 验单个插件（也可传插件根目录）
 verify_plugin                               # 巡检所有已装插件
+
+quick_command restart                       # 执行预置 restart（重启 DSH，当前连接会断）
+quick_command list                          # 列出所有快捷名 + 命令
+quick_command add name: "logs" command: "tail -n 50 <日志路径>"          # 新增定义（落盘）
+quick_command run  name: "logs" command: "tail -n 20 <日志路径>"         # 先持久化（新增或更新）再执行
+quick_command edit name: "logs" command: "..."                          # 修改已定义命令
+quick_command delete name: "logs"                                       # 删除定义
 ```
 
 `mark_read` 的语义是**配置「哪些命令算读」**，不是逐个标记文件：集合里的命令执行后，
@@ -90,6 +98,26 @@ test_env { action: "stop" }                                      # 停止（按�
 ```
 sync_plugin { write: true, register: true, dshHome: "<环境目录>" }
 ```
+
+## 快捷命令（quick_command）
+
+定义存 `<DSH_HOME>/useful-tools/quick-commands.json`，形如：
+
+```json
+{
+  "restart": {
+    "command": "nohup sh -c 'sleep 2; \"/path/to/start.sh\" restart' >/dev/null 2>&1 &",
+    "description": "重启 DSH 主实例"
+  },
+  "logs": { "command": "tail -n 50 /path/to/dsh.log", "description": "看最近日志" }
+}
+```
+
+- 首次使用没有该文件时自动带预置 `restart`：`start.sh` 路径按 `DSH_START_SCRIPT` 环境变量或常见安装位探测，
+  探测不到就保留占位符（执行时报错暴露，不静默跑错命令）。
+- `run` 只执行 JSON 里已定义的命令；**同时传 `command` 时先写入 JSON（新增或更新）再执行**，不是临时执行。
+- 执行走 `bash -c`（Windows `cmd /c`），默认超时 60 秒，stdout/stderr 各截断 20000 字符。
+- `restart` 会重启 DSH 并断开当前连接：预置命令已后台化（`nohup` + 延迟 2 秒），工具先返回「已触发」。
 
 ## 配置（`<DSH_HOME>/useful-tools/config.json`）
 
@@ -179,6 +207,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.18 | 新增 `quick_command` 工具：快捷命令定义存 `<DSH_HOME>/useful-tools/quick-commands.json`，`action=run`（缺省，按 name 执行；带 command 时先持久化再执行）/ `add` / `edit` / `delete` / `list`（列出所有名字+命令）；预置 `restart` = `start.sh restart`（后台延迟 2 秒，会断开当前连接）。执行走 `bash -c`、默认超时 60 秒、输出截断 20000 字符。 |
 | 0.1.17 | 新增单测 CI：`.github/workflows/test.yml`，push 到 master 与所有 PR 触发，Node 20/22/24 矩阵跑 `node --test test/*.mjs`（测试零依赖，无需 npm install）。 |
 | 0.1.16 | 修 `sync_plugin` 源目录 bug：缺省 `source` 少上溯两层（停在 `lib/core`），`packageFilesOf` 读不到 `package.json`，每次同步都是「0 文件空操作」却返回 `ok:true`——已改为上溯三层（`tools.js` 用 `fileURLToPath`，`sync-plugin.mjs` 的 `SOURCE_ROOT` 同步修正），实测同步写入 5 文件、副本 README/package.json 一致。另：README 示例地址改 `<本机IP>` 占位（不再写本机回环）；CONTRACT C-402 改为「允许探测候选、环境变量/参数优先且不得作为唯一来源」，C-601 测试数改 5 份，补记 0.1.9/0.1.10/0.1.13 契约更新；sync-plugin 顶部注释与 files 白名单对齐。 |
 | 0.1.15 | 修 minihost 启动 TDZ 回归：`host.mjs` 的 `TIMEOUT_MS` 引用了后面才定义的 `DEFAULT_TIMEOUT_MS`（`Cannot access before initialization`），已把常量定义前移；实测 `minihost start` 正常、请求 200。另在 preview/minihost 工具描述里注明「参数定义在实例加载期注册，更新插件后需重载实例」。 |
