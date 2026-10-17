@@ -1,6 +1,6 @@
 {
   "name": "dsh-useful-tools",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "DSH 有用小工具箱：读命令集合（mark_read）+ 插件同步（sync_plugin）+ 后端模拟（minihost）+ 前端预览（preview）+ 插件验证（verify_plugin）+ 测试环境（test_env）",
   "type": "module",
   "main": "lib/index.js",
