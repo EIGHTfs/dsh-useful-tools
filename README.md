@@ -47,3 +47,18 @@ mark_read undo:true all:true                           # 全部还原成宿主�
 DSH 0.2.1-alpha.2+。装好后需重启 DSH 生效（工具与钩子在启动时装配）。
 
 另有用户指令 `/mark-read [--undo] [--all] <路径…>`（结果只给界面，不进模型历史）。
+
+## 目录结构（按功能域划分 · 命名规范）
+
+三个功能互相独立，各自一个目录，统一命名规范：
+
+| 功能域 | 目录 | 工具（toolcall） | 指令（斜杠命令） | 核心文件 |
+|---|---|---|---|---|
+| 文件已读标记 | `lib/mark-read/` | `mark_read` | `/mark-read` | `observe.js`（补发+台账）· `hook.js`（自动标记钩子） |
+| 插件同步 | `lib/plugin-sync/` | `sync_plugin` | `/sync-plugin` | `tools.js` · `sync-plugin.mjs`（CLI 同款）· `install.mjs` · `fsx.js` |
+| mini 宿主 | `lib/minihost/` | `minihost_start/call/stop/list` | `/minihost` | `tools.js` · `host.mjs`（主）· `host-child.mjs`（每请求子进程） |
+
+命名规范：**目录 = 功能域 kebab-case；工具 = 域名_动词；指令 = 域名-动词；文件按角色命名**（tools/host/hook/observe）。
+入口 `lib/index.js` 只做装配（逐域 register*），不含业务逻辑。
+
+数据/运行时产物统一落 `.minihost/`（pid 台账与日志，git 忽略）。
