@@ -1,35 +1,25 @@
 # dsh-useful-tools · DSH 有用小工具箱
 
-小工具集合插件。首个工具：**文件观测标记**——解决官方原生 write/edit 的
-「cannot modify "…": file has not been read」门禁误伤（内容明明已经用 grep/脚本等
-方式看过，原生写仍要求先用 read 工具读一遍）。
-
-## 用法一览（撤销是参数，不是另一个工具）
-
-一个工具双向用法：不带 undo = 增加；undo:true = 撤销；all:true 作用于标记台账。
-
-## 开发者能力（本插件自带）
-
-- `sync_plugin` 工具：把本插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`--write` 真写；软链布局下免重启热重载）——由原 dsh-git-push 的 sync-plugin.mjs 收编而来
-- `lib/core/minihost/`：通用插件 mini 宿主（`host.mjs` 主进程 + `host-child.mjs` 每请求子进程）；用到 minihost 的插件建议改为引用本插件的 `minihost` 工具
+小工具集合插件。**mark_read** 配置「读命令集合」——哪些命令（cat/grep/head/sed/awk…）读过的文件算已读，
+解决官方原生 write/edit 的「cannot modify "…": file has not been read」门禁误伤
+（内容明明已经用 grep/脚本等方式看过，原生写仍要求先用 read 工具读一遍）。
 
 ## 功能
 
 | 工具 | 参数 | 简介 |
 |---|---|---|
-| `mark_read` | `commands` `undo` | 配置**读命令集合**：哪些命令读过的文件算已读。`commands` 可写命令串，也可传文件路径从文件读；不传用预置清单（`lib/core/mark-read/read-commands.json`）。`undo:true` 撤销这些命令。**两种读法都算**：① 宿主工具（如 `grep` 工具）；② `bash` 里跑的命令（`cat a.txt`、`grep x b.txt`）。跨平台别名归一：`Get-Content`/`gc`/`type`/`more` → cat，`Select-String`/`sls`/`findstr` → grep。集合里的命令读过的**所有文件**自动生效，不用指定文件 |
+| `mark_read` | `commands` `undo` | 配置**读命令集合** + **自动标记钩子**（两者是同一功能）。`commands` 写命令串 / 传文件路径 / 不传用预置清单（`lib/core/mark-read/read-commands.json`）；`undo:true` 撤销。**两种读法都算**：① 宿主工具（如 `grep` 工具）；② `bash` 里跑的命令（`cat a.txt`、`grep x b.txt`）。跨平台别名归一：`Get-Content`/`gc`/`type`/`more` → cat，`Select-String`/`sls`/`findstr` → grep。集合里的命令执行后，钩子（`tools/post-execute`）自动把它读过的**所有文件**补发观测，不用指定文件；配置落盘 `<DSH_HOME>/useful-tools/config.json`、每次现读 ⇒ 配置一次永久有效 |
 | `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去 |
 | `minihost` | `action` `plugin` `port` `path` `method` `body` `services` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求）；`services` 可注入宿主服务（插件依赖 storageDomain/sessions 等真实服务时用） |
 | `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` | **前端模拟**：插件预览页。`action=gen`（生成，无 spec 时自动挂载插槽组件）/ `serve`（启动，`backend` 可反代真实后端或 minihost）/ `stop` / `status` |
 | `verify_plugin` | `plugin` `source` `profile` `log` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码）。`plugin` 传插件名或根目录，缺省巡检所有已装插件 |
 | `test_env` | `action` `kind` `version` `root` `force` `plugin` `pluginName` `dir` `dshBin` | 测试环境（隔离实例）：`action=create`（创建）/ `start`（启动）/ `stop`（停止）/ `status`（状态）。独立 DSH_HOME + 自动端口，随便崩不碰主实例 |
-| 自动标记钩子 | 配置项 `observeHook` `observeTools` | 非工具能力：集合里的命令执行后自动把读过的文件补发观测（`tools/post-execute`），配置落盘 `<DSH_HOME>/useful-tools/config.json`、每次现读 |
 
 ## 用法
 
 ```
 mark_read commands: "cat,grep,head"        # 加入读命令集合（持久生效）
-mark_read                                   # 不传 commands = 用预置清单（21 个常见读文件命令）
+mark_read                                   # 不传 commands = 用预置清单（20 个常见读文件命令）
 mark_read commands: "/tmp/cmds.txt"         # 从文件读命令集合（每行/逗号一个）
 mark_read commands: "grep" undo: true       # 撤销 grep（从集合移除）
 
@@ -114,15 +104,17 @@ sync_plugin { write: true, register: true, dshHome: "<环境目录>" }
 - `observeHook`：自动标记钩子总开关（默认开）
 - `observeTools`：读命令集合——**填什么、什么就生效**；钩子每次现读，改动即时生效无需重启
 - 也可以直接用 `mark_read` 工具改这个集合（`commands` 加入 / `undo` 撤销）
-- 预置清单：`lib/core/mark-read/read-commands.json`（21 个常见读文件命令）
+- 预置清单：`lib/core/mark-read/read-commands.json`（20 个常见读文件命令）
 
 ## 语义与边界（实测结论）
 
 - 观测**有效到文件版本再变为止**：版本不变一直放行；文件被任何一方改动后，
   原生写改为报 `file changed since it was read — re-read the file, then retry`，重新标记即可。
 - 官方 read 带 offset/limit 只看几行同样算读过 ⇒ 把 grep 纳入与宿主自身尺度一致，不算放权。
-- `bash` 里 `cat`/`sed` 等无法可靠判定读了哪些文件，**不建议**加入命令集合。
-- 单次调用最多标记 40 个文件（防全仓 grep 观测风暴）。
+- **bash 里跑的命令也算读**（0.1.13 起）：钩子解析命令串（`cat a.txt`、`grep x b.txt`），
+  命令名在集合里就标记其文件参数；跨平台别名归一（`Get-Content`/`gc`/`type` → cat，`Select-String`/`sls`/`findstr` → grep）。
+  已知边界：`xargs`、`$(...)`、`for` 循环里的文件参数提取不到（启发式解析）。
+- 单次钩子调用最多标记 40 个文件（防全仓 grep 观测风暴）。
 
 ## 安装
 
@@ -146,8 +138,8 @@ lib/
 ├── shared/                  工具适配层 —— 新增工具只需新建一个文件夹，不必改装配
 │   ├── mark_read/index.js    → 工具 mark_read
 │   ├── sync_plugin/index.js  → 工具 sync_plugin
-│   ├── minihost/index.js     → 工具 minihost   （action=start|call|stop|list）
-│   ├── preview/index.js      → 工具 preview    （action=gen|serve|stop|list）
+│   ├── minihost/index.js     → 工具 minihost   （action=start|call|stop|list|status）
+│   ├── preview/index.js      → 工具 preview    （action=gen|serve|stop|list|status）
 │   ├── verify_plugin/index.js → 工具 verify_plugin（验证任意插件的装载与工具注册，只静态分析）
 │   └── test_env/index.js     → 工具 test_env（测试环境：create/start/stop/status）
 └── core/                    共享实现（不含注册逻辑）
@@ -165,22 +157,23 @@ lib/
 ## 预览页（统一管理 · 主题插件除外）
 
 ```
-通用件（本插件）  lib/preview/：DSH 根与 DSH_HOME 自探测 · React UMD 缓存 · 单文件 HTML 壳
-                  · 静态服务 + /api 反代 · 进程台账（.preview/instances.json）
-插件自持          assets/preview.spec.mjs（垫片 harness / 假数据 / 首屏注入 post / 输出路径）
+通用件（本插件）  lib/core/preview/：DSH 根与 DSH_HOME 自探测 · React UMD 缓存 · 单文件 HTML 壳
+                  · 静态服务 + /api 反代 · 进程台账（.preview/instances.json）· 通用自动挂载垫片
+插件自持          assets/preview.spec.mjs（可选增强：自定义垫片 harness / 假数据 / 首屏注入 post / 输出路径）
                  └ 默认字段：{ title, css, harness, body, post, client, output }
 主题插件          允许完全自持预览（皮肤注入与真实渲染强耦合，不走本工具）
 ```
 
 ```bash
 # 工具（一个 preview 工具，动作走 action 参数）
-preview { action: "gen",   plugin: "<插件根>", spec?, out? }        # 生成单文件 preview.html（内联 React UMD）
+preview { action: "gen",   plugin: "<插件根>", spec?, out? }        # 生成单文件 preview.html（无 spec 时自动挂载插槽组件）
 preview { action: "serve", file: "<preview.html>", port?, backend? } # 起服务；给 backend 则 /api/* 反代真实后端
 preview { action: "stop",  port | file }
-preview { action: "list" }
+preview { action: "status" }                                        # 存活实例（等价 list）
 ```
 
-实测（2026-10-17）：夹具插件 gen 产出 1.14MB 单文件 → serve 200 → 页面含预期标记 → stop 清台账 ✓。
+实测（2026-10-17）：dsh-session-conductor 无 spec → gen 1.28MB → serve 200 → `#root` 渲染出真实界面（5 个插槽、0 错误）；
+dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 ## 版本记录
 
