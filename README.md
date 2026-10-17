@@ -11,7 +11,7 @@
 | `mark_read` | `commands` `undo` | 配置**读命令集合** + **自动标记钩子**（两者是同一功能）。`commands` 写命令串 / 传文件路径 / 不传用预置清单（`lib/core/mark-read/read-commands.json`）；`undo:true` 撤销。**两种读法都算**：① 宿主工具（如 `grep` 工具）；② `bash` 里跑的命令（`cat a.txt`、`grep x b.txt`）。跨平台别名归一：`Get-Content`/`gc`/`type`/`more` → cat，`Select-String`/`sls`/`findstr` → grep。集合里的命令执行后，钩子（`tools/post-execute`）自动把它读过的**所有文件**补发观测，不用指定文件；配置落盘 `<DSH_HOME>/useful-tools/config.json`、每次现读 ⇒ 配置一次永久有效 |
 | `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去 |
 | `minihost` | `action` `plugin` `port` `path` `method` `body` `services` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求）；`services` 可注入宿主服务（插件依赖 storageDomain/sessions 等真实服务时用） |
-| `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` | **前端模拟**：插件预览页。`action=gen`（生成，无 spec 时自动挂载插槽组件）/ `serve`（启动，`backend` 可反代真实后端或 minihost）/ `stop` / `status` |
+| `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` `host` `lan` | **前端模拟**：插件预览页。`action=gen`（生成，无 spec 时自动挂载插槽组件）/ `serve`（启动，`backend` 可反代真实后端或 minihost；`host=0.0.0.0` 或 `lan:true` 监听局域网并返回 `lanUrl`）/ `stop` / `status` |
 | `verify_plugin` | `plugin` `source` `profile` `log` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码）。`plugin` 传插件名或根目录，缺省巡检所有已装插件 |
 | `test_env` | `action` `kind` `version` `root` `force` `plugin` `pluginName` `dir` `dshBin` | 测试环境（隔离实例）：`action=create`（创建）/ `start`（启动）/ `stop`（停止）/ `status`（状态）。独立 DSH_HOME + 自动端口，随便崩不碰主实例 |
 
@@ -179,6 +179,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.14 | `preview serve` 支持局域网访问：新增 `host`（缺省 127.0.0.1，可传 0.0.0.0）与 `lan:true`（等价 0.0.0.0）；监听 0.0.0.0 时返回 `lanUrl`（本机第一个非回环 IPv4，如 `http://10.10.31.218:31200/`），原 `url`（127.0.0.1）保留。实测：`ss` 显示 `0.0.0.0:31200 LISTEN`，局域网与回环均 200。 |
 | 0.1.13 | `mark_read` 支持 `bash` 里跑的命令：钩子解析命令串（`cat a.txt`、`grep x b.txt`），命令名在集合里就标记其文件参数——`cat` 不再必须写成宿主工具。命令名做**跨平台别名归一**：`Get-Content`/`gc`/`type`/`more`→cat，`Select-String`/`sls`/`findstr`→grep，去 `.exe`/`.cmd`/`.bat`/`.ps1` 后缀。实测：`bash cat c.txt` 后直接 edit 成功。 |
 | 0.1.12 | `mark_read` 重做：语义从「按文件标记」改为「**读命令集合**」——两个参数 `commands`（命令串，或传文件路径从文件读，不传用预置清单 `read-commands.json`）+ `undo`（撤销）；集合里的命令读过的**所有文件**自动生效。配置落盘 `<DSH_HOME>/useful-tools/config.json`，钩子每次现读 ⇒ 命令配置一次、永久有效（改完即时生效、重启仍在）。移除 `paths` / `file_path` / `all`（要指定文件直接 `read`）。 |
 | 0.1.11 | `preview` 自动挂载修复 TDZ：`__ModuleLoader__.load` 只登记 entry，`factory` 统一延迟到 `setTimeout(0)`（client.js 整体执行完之后）再调用。实测 dsh-skill-scoreboard：修复前无插槽可渲染，修复后 `#root` 渲染出真实界面。 |
