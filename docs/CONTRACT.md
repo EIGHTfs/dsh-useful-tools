@@ -95,6 +95,16 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ---
 
+### C-111 useful_tools 是动态清单
+`useful_tools` 的 `action=help`（缺省）动态扫描 `lib/shared/*/index.js`，import 每个模块的 `description` / `parameters`，
+输出「名字 + 说明 + 参数 + 示例调用」；`action=list` 给紧凑清单；`tool` 过滤单个工具。
+**禁止维护硬编码工具清单**：新增工具只需新建目录，本文件与 help 输出都应自动跟随。
+- 依据：`lib/shared/useful_tools/index.js` 的 `loadTools()`（与 `lib/index.js` 的目录扫描同源）。
+- 验证：`test/useful-tools.test.mjs` 断言清单含 mark_read / quick_command / sync_plugin，且不写死工具总数。
+- 违反后果：新增工具后 help 看不到它（README 与实现对不上就是这么来的）。
+
+---
+
 ## 2. 装配入口（cordis）
 
 ### C-201 入口必须导出 `apply`
@@ -213,7 +223,7 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
-- 依据：`test/` 现有 6 份测试，`package.json` 的 `test` 脚本为 `node --test test/*.mjs`。
+- 依据：`test/` 现有 7 份测试，`package.json` 的 `test` 脚本为 `node --test test/*.mjs`。
 - CI：`.github/workflows/test.yml` 在 push master 与 PR 时用 Node 20/22/24 矩阵跑同一命令（零依赖，无需 npm install）。
 - 验证：`npm test`（或 `node --test test/*.mjs`）全绿。
 - 违反后果：装配类 bug 只能靠宿主日志发现（本次 `Invalid effect` 藏了很久）。

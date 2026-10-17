@@ -37,7 +37,12 @@ test('list：首次没有文件时返回预置 restart，并标记 preset', asyn
     assert.equal(r.ok, true);
     assert.equal(r.preset, true);
     assert.ok(r.items.restart, '应带预置 restart');
-    assert.ok(r.items.restart.command.includes('start.sh'), '预置命令应指向 start.sh');
+    assert.ok(r.items.restart.command.includes('restart'), '预置命令应是重启');
+    // start.sh 路径随机器变化：探测到就展开成绝对路径，探测不到保留 {startScript} 占位符
+    assert.ok(
+      r.items.restart.command.includes('start.sh') || r.items.restart.command.includes('{startScript}'),
+      '命令应指向 start.sh（探测到则展开，探测不到保留占位符）',
+    );
     assert.ok(Array.isArray(r.list), 'list 应给出名字+命令的数组形态');
     assert.equal(r.list[0].name, 'restart');
     assert.ok(r.list[0].command.includes('start.sh'));

@@ -1,5 +1,6 @@
 .minihost/
 .preview/
 .trash/
+audit-history/
 node_modules/
 node_modules.orig/

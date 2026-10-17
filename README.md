@@ -15,6 +15,7 @@
 | `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` `host` `lan` | **前端模拟**：插件预览页。`action=gen`（生成，无 spec 时自动挂载插槽组件）/ `serve`（启动，`backend` 可反代真实后端或 minihost；`host=0.0.0.0` 或 `lan:true` 监听局域网并返回 `lanUrl`）/ `stop` / `status` |
 | `verify_plugin` | `plugin` `source` `profile` `log` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码）。`plugin` 传插件名或根目录，缺省巡检所有已装插件 |
 | `test_env` | `action` `kind` `version` `root` `force` `plugin` `pluginName` `dir` `dshBin` | 测试环境（隔离实例）：`action=create`（创建）/ `start`（启动）/ `stop`（停止）/ `status`（状态）。独立 DSH_HOME + 自动端口，随便崩不碰主实例 |
+| `useful_tools` | `action` `tool` | **本插件工具清单**（动态扫描 `lib/shared`，不维护硬编码列表）：`action=help`（缺省，输出每个工具的名字/说明/参数/示例调用）/ `list`（紧凑清单）；`tool` 可选，只看某一个工具 |
 
 ## 用法
 
@@ -33,6 +34,10 @@ quick_command add name: "logs" command: "tail -n 50 <日志路径>"          # �
 quick_command run  name: "logs" command: "tail -n 20 <日志路径>"         # 先持久化（新增或更新）再执行
 quick_command edit name: "logs" command: "..."                          # 修改已定义命令
 quick_command delete name: "logs"                                       # 删除定义
+
+useful_tools                                  # 列出本插件所有工具（名字/说明/参数/示例）
+useful_tools action: "list"                   # 紧凑清单
+useful_tools tool: "quick_command"            # 只看一个工具
 ```
 
 `mark_read` 的语义是**配置「哪些命令算读」**，不是逐个标记文件：集合里的命令执行后，
@@ -207,6 +212,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.19 | 新增 `useful_tools` 工具：动态扫描 `lib/shared` 输出本插件全部工具（名字/说明/参数/示例调用），`action=help`（缺省）/ `list`，`tool` 可只看单个。另修 `quick_command` 预置命令在探测不到 `start.sh` 时把占位符替换成空串的问题（改为保留 `{startScript}`，执行时报错暴露）。 |
 | 0.1.18 | 新增 `quick_command` 工具：快捷命令定义存 `<DSH_HOME>/useful-tools/quick-commands.json`，`action=run`（缺省，按 name 执行；带 command 时先持久化再执行）/ `add` / `edit` / `delete` / `list`（列出所有名字+命令）；预置 `restart` = `start.sh restart`（后台延迟 2 秒，会断开当前连接）。执行走 `bash -c`、默认超时 60 秒、输出截断 20000 字符。 |
 | 0.1.17 | 新增单测 CI：`.github/workflows/test.yml`，push 到 master 与所有 PR 触发，Node 20/22/24 矩阵跑 `node --test test/*.mjs`（测试零依赖，无需 npm install）。 |
 | 0.1.16 | 修 `sync_plugin` 源目录 bug：缺省 `source` 少上溯两层（停在 `lib/core`），`packageFilesOf` 读不到 `package.json`，每次同步都是「0 文件空操作」却返回 `ok:true`——已改为上溯三层（`tools.js` 用 `fileURLToPath`，`sync-plugin.mjs` 的 `SOURCE_ROOT` 同步修正），实测同步写入 5 文件、副本 README/package.json 一致。另：README 示例地址改 `<本机IP>` 占位（不再写本机回环）；CONTRACT C-402 改为「允许探测候选、环境变量/参数优先且不得作为唯一来源」，C-601 测试数改 5 份，补记 0.1.9/0.1.10/0.1.13 契约更新；sync-plugin 顶部注释与 files 白名单对齐。 |
