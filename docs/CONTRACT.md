@@ -17,7 +17,9 @@
 
 ### C-102 一个文件夹一个工具，多动作走 `action`
 同一功能域的多种动作收进 `action` 参数，不拆成多个工具。
-- 依据：`minihost`（start/call/stop/list）、`preview`（gen/serve/stop/list）的实现。
+启动 / 停止 / 状态这类生命周期动作同样走 `action`：`status` 与 `list` 同义
+（状态查询用 `status` 更直白，旧名保留兼容，不新增工具）。
+- 依据：`minihost`（start/call/stop/list/status）、`preview`（gen/serve/stop/list/status）的实现。
 - 验证：新增工具时检查 `parameters` 里是否有 `action`；工具总数不应随动作数增长。
 - 违反后果：工具清单膨胀，模型选择成本上升。
 
@@ -33,6 +35,13 @@
 - 依据：`lib/index.js` 全文只有目录扫描、注册、钩子挂载、装配摘要日志。
 - 验证：新增一个工具后 `git diff lib/index.js` 应为空。
 - 违反后果：每加一个工具就改装配层，改动面随工具数线性增长。
+
+### C-105 前后端模拟分工
+`preview` 负责**前端模拟**（页面渲染自检），`minihost` 负责**后端模拟**（插件服务端 handler）；
+两者通过 `preview serve` 的 `backend` 串起来：前端页面的 `/api/*` 打到 minihost，即完成不碰真实后端的联调。
+- 依据：`lib/core/preview/server.js` 的 backend 反代；`lib/core/minihost/host.mjs` 的插件 handler 加载。
+- 验证：`minihost start` 后把 `preview serve` 的 `backend` 指向该端口，页面 `/api/*` 应返回 minihost 的响应。
+- 违反后果：两个工具各自能跑但串不起来，模拟链路断在前端或后端。
 
 ---
 

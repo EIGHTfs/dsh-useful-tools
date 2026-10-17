@@ -11,7 +11,7 @@
 ## 开发者能力（本插件自带）
 
 - `sync_plugin` 工具：把本插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`--write` 真写；软链布局下免重启热重载）——由原 dsh-git-push 的 sync-plugin.mjs 收编而来
-- `assets/dsh-plugin-minihost.mjs` + `dsh-plugin-minihost-child.mjs`：通用插件 minihost（模拟装配 / dev 直通），散落各处的副本归拢于此；用到 minihost 的插件建议改为引用本插件能力
+- `lib/core/minihost/`：通用插件 mini 宿主（`host.mjs` 主进程 + `host-child.mjs` 每请求子进程）；用到 minihost 的插件建议改为引用本插件的 `minihost` 工具
 
 ## 功能
 
@@ -20,8 +20,8 @@
 | `mark_read` | 把文件标记为已读（按宿主同一 recipe 补发 `fs/observed`）⇒ 之后原生 write/edit 可直接改 |
 | `mark_read（undo:true）` | 反向撤回：让原生写对该文件恢复「必须先读」门禁 |
 | `sync_plugin` | 把插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`write:true` 真写） |
-| `minihost` | 本地 mini 宿主：跑插件服务端代码（action=start/call/stop/list） |
-| `preview` | 插件预览页生成/服务/停止/列表（action=gen/serve/stop/list） |
+| `minihost` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来（start 启动 / stop 停止 / status 状态 / call 请求） |
+| `preview` | **前端模拟**：插件预览页（gen 生成 / serve 启动，可反代真实后端或 minihost / stop / status） |
 | `verify_plugin` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码） |
 | 自动标记钩子 | 对配置集合里的工具（默认 `grep`）执行后自动补发观测，无需手动 mark |
 
@@ -49,6 +49,22 @@ verify_plugin                                          # 巡检所有已装插�
 只读文件、不 import 被验证插件——插件模块顶层和 `apply` 都可能带副作用，验证不该把它跑起来。
 代价是「注册是否真的成功」仍需宿主内实测（工具是否真的出现在工具清单里），输出里的 `staticOnly`/`notes` 会标注这一点。
 
+## 前后端模拟链路
+
+`minihost` 是**后端模拟**，`preview` 是**前端模拟**，两者通过 `serve` 的 `backend` 参数串成一条链，
+全程不碰真实后端：
+
+```
+minihost { action: "start", plugin: "<插件根>", port: 31177 }          # ① 起后端（插件服务端代码）
+preview  { action: "gen",   plugin: "<插件根>" }                        # ② 生成前端预览页
+preview  { action: "serve", file: "<插件根>/assets/preview.html", backend: "http://127.0.0.1:31177" }
+                                                                        # ③ 起前端，/api/* 打到 ①
+minihost { action: "status" } · preview { action: "status" }            # 查状态
+minihost { action: "stop", port: 31177 } · preview { action: "stop", port: 31188 }
+```
+
+`backend` 也可以指向真实 DSH 后端（如 `http://127.0.0.1:30800`），此时是「前端模拟 + 真实后端」。
+
 ## 配置（设置 → 插件 → DSH 有用小工具）
 
 - `observeHook`：自动标记钩子总开关（默认开）
@@ -74,6 +90,7 @@ DSH 0.2.1-alpha.2+。装好后需重启 DSH 生效（工具与钩子在启动时
 | --- | --- |
 | `README.md` | 门面：简介、工具表、用法、配置、安装、目录结构、版本记录 |
 | `docs/CONTRACT.md` | 契约：命名 / 装配 / 部署 / 依赖 / 验证 / 测试 / 版本的硬约束，实现与验收的唯一依据 |
+| `docs/NOT-DONE.md` | 未实现能力与原因（预览页截图 / 自包含快照 / shell 启动器），含未来若做的形态 |
 
 ## 目录结构（目录即工具名 · 一个文件夹一个工具）
 
@@ -121,6 +138,7 @@ preview { action: "list" }
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.5 | 启停状态统一走工具参数：`preview` 与 `minihost` 新增 `status`（等价 `list`，语义直白，旧名保留）。新增 [docs/NOT-DONE.md](docs/NOT-DONE.md) 记录三项未实现能力（预览页截图、自包含快照、shell 启动器）的评估结论与不做原因。 |
 | 0.1.4 | 契约独立成文：[docs/CONTRACT.md](docs/CONTRACT.md)（编号 C-101~C-703，含命名/装配/部署/依赖/验证/测试/版本）。README 只保留门面与文档索引，契约细节改为引用，不再两处重复。`docs/` 纳入同步清单。 |
 | 0.1.3 | 新增 `verify_plugin`：验证任意 DSH 插件的装载与工具注册（装配结构静态分析 + 部署一致性 + 宿主日志；只读文件、不执行被验证插件的代码），支持传插件名或根目录，缺省巡检所有已装插件。 |
 | 0.1.2 | 移除斜杠指令：宿主 `commands.register` 要求 `input` 必须带非空 `hint`，原实现传 `input: { type: 'string' }` 使四条指令全部注册失败；该功能收益低于维护成本，直接移除，只保留工具。README 里的工具名同步为实际注册名（`mark_read` / `sync_plugin` / `minihost` / `preview`）。 |
