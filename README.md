@@ -77,7 +77,7 @@ test_env { action: "stop" }                                      # 停止（按�
 ```
 
 `plugin` 可选：给了就把该插件复制进 `profiles/web/node_modules` 并注册到 bundle 列表；不给就是纯裸环境。
-环境根由参数 `root` 或 `DSH_WORKSPACE` / `DSH_HOME` 上一级「工作区」决定，**不写死路径**。
+环境根优先级：参数 `root` > 环境变量 `DSH_TEST_ENV_ROOT` > 插件配置 `<DSH_HOME>/useful-tools/config.json` 的 `testEnvRoot` > 推算（`DSH_WORKSPACE` / `DSH_HOME` 上一级「工作区」）。**不写死路径**，部署方按配置决定位置。
 
 配合 `sync_plugin` 可以把插件同步 + 注册进这个隔离环境（`dshHome` 指向环境目录即可，缺省是当前实例）：
 
@@ -160,6 +160,7 @@ preview { action: "list" }
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.9 | 测试环境根改为**配置驱动**：参数 `root` > `DSH_TEST_ENV_ROOT` > 插件配置 `<DSH_HOME>/useful-tools/config.json` 的 `testEnvRoot` > 推算。环境目录为 `<根>/<版本>@Save-test`，部署方按配置决定位置，不写死代码路径。 |
 | 0.1.8 | 新增 `test_env` 工具：测试环境（隔离实例）create/start/stop/status，独立 DSH_HOME + 自动端口（3083-3182），路径全由参数/环境决定。`sync_plugin` 增加 `dshHome`（缺省当前实例）、`pluginName`、`register`（写 profile 的 dependencies + bundles，并对齐 node_modules 副本），可把插件直接装进隔离实例。实测：同步 34 文件 + 注册成功，实例启动 `ready:true`、无 failed to import。 |
 | 0.1.7 | `preview gen` 无 spec 时改为**通用自动挂载**：mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect），调插件 `apply(ctx)`，把 `slots.register(def, component)` 捕获到的组件 `createRoot().render()` 到 `#root`。实测 dsh-session-conductor（无 spec）：`#root` 1 个子节点 / 1378 字符 / 捕获 5 个插槽 / 0 错误 / 中文文案正常。spec 从此是可选的增强（自定义 mock 与首屏注入），不再是必填。 |
 | 0.1.6 | `preview gen` 支持无 spec 兜底：插件没有 `assets/preview.spec.mjs` 时按默认垫片生成页面，返回带 `note`；显式传入不存在的 spec 路径仍报错，不静默降级。 |

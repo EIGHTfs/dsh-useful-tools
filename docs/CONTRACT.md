@@ -55,10 +55,11 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ### C-107 测试环境是隔离实例，路径全由配置决定
 `test_env` 管理的实例：独立 `DSH_HOME`（默认 `<工作区>/<DSH版本>@Save-test`）、独立端口（3083-3182 首个空闲），
-与主实例完全隔离。环境根/版本/端口一律探测或参数传入，**不写死任何机器路径**；
+与主实例完全隔离。**环境根不写死**，优先级：参数 `root` > 环境变量 `DSH_TEST_ENV_ROOT` > 插件配置
+`<DSH_HOME>/useful-tools/config.json` 的 `testEnvRoot` > 推算（`DSH_WORKSPACE` / `DSH_HOME` 上一级「工作区」）。
 `sync_plugin` 的 `dshHome` 同样缺省为当前实例（`process.env.DSH_HOME`），传环境目录即可把插件装进隔离实例。
-- 依据：`lib/core/test-env/index.js` 的 `envRoot` / `detectDshVersion` / `startEnv`；`lib/core/plugin-sync/tools.js` 的 `registerPlugin`。
-- 验证：`test_env { action: "start" }` 返回 `ready:true` 与端口；`sync_plugin { write:true, register:true, dshHome:"<环境目录>" }` 后该环境 profile 的 `dependencies` 与 `dsh.profile.bundles` 均含插件名。
+- 依据：`lib/core/test-env/index.js` 的 `envRoot` / `readPluginConfig` / `detectDshVersion` / `startEnv`；`lib/core/plugin-sync/tools.js` 的 `registerPlugin`。
+- 验证：配置 `testEnvRoot` 后 `test_env { action: "status" }` 的 `root` 应等于该配置；`test_env { action: "start" }` 返回 `ready:true` 与端口；`sync_plugin { write:true, register:true, dshHome:"<环境目录>" }` 后该环境 profile 的 `dependencies` 与 `dsh.profile.bundles` 均含插件名。
 - 违反后果：测试实例与主实例共用 home/端口，测试崩了会污染生产；或路径写死导致换机不可用。
 
 ---
