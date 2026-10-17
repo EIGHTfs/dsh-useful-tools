@@ -1,0 +1,5 @@
+- insert:
+  id: dsh-useful-tools
+  name: dsh-useful-tools
+  config:
+    enabled: true
