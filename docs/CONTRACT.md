@@ -62,6 +62,14 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 - 验证：配置 `testEnvRoot` 后 `test_env { action: "status" }` 的 `root` 应等于该配置；`test_env { action: "start" }` 返回 `ready:true` 与端口；`sync_plugin { write:true, register:true, dshHome:"<环境目录>" }` 后该环境 profile 的 `dependencies` 与 `dsh.profile.bundles` 均含插件名。
 - 违反后果：测试实例与主实例共用 home/端口，测试崩了会污染生产；或路径写死导致换机不可用。
 
+### C-108 minihost 路由匹配与服务注入
+`minihost` 的路由匹配只比较 **pathname**（`/api/x?y=1` 按 `/api/x` 匹配），query 原样留给 handler；
+插件依赖真实宿主服务（`storageDomain` / `sessions` 等）时，用 `services` 参数指向一个模块
+（默认导出服务对象，或返回服务对象的函数），注入项覆盖同名默认服务，核心服务（`webServer` / `tools`）仍由 minihost 提供。
+- 依据：`lib/core/minihost/host-child.mjs` 的 pathname 匹配与 `DSH_MINIHOST_SERVICES` 注入；`host.mjs` 的 `--services`。
+- 验证：`/api/x?y=1` 与 `/api/x` 返回同一状态码；注入 storageDomain 后 `/templates` 由 500 变 200。
+- 违反后果：带参数的接口全部 404；依赖宿主服务的插件在 minihost 里只能跑出 500。
+
 ---
 
 ## 2. 装配入口（cordis）

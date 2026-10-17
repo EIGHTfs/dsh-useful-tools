@@ -19,7 +19,7 @@
 |---|---|---|
 | `mark_read` | `paths` `file_path` `all` `undo` | 把文件标记为已读（按宿主同一 recipe 补发 `fs/observed`）⇒ 之后原生 write/edit 可直接改。`undo:true` 反向撤回，恢复「必须先读」门禁；`all:true` 作用于标记台账 |
 | `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去 |
-| `minihost` | `action` `plugin` `port` `path` `method` `body` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求） |
+| `minihost` | `action` `plugin` `port` `path` `method` `body` `services` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求）；`services` 可注入宿主服务（插件依赖 storageDomain/sessions 等真实服务时用） |
 | `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` | **前端模拟**：插件预览页。`action=gen`（生成，无 spec 时自动挂载插槽组件）/ `serve`（启动，`backend` 可反代真实后端或 minihost）/ `stop` / `status` |
 | `verify_plugin` | `plugin` `source` `profile` `log` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码）。`plugin` 传插件名或根目录，缺省巡检所有已装插件 |
 | `test_env` | `action` `kind` `version` `root` `force` `plugin` `pluginName` `dir` `dshBin` | 测试环境（隔离实例）：`action=create`（创建）/ `start`（启动）/ `stop`（停止）/ `status`（状态）。独立 DSH_HOME + 自动端口，随便崩不碰主实例 |
@@ -61,6 +61,17 @@ preview  { action: "serve", file: "<插件根>/assets/preview.html", backend: "h
                                                                         # ③ 起前端，/api/* 打到 ①
 minihost { action: "status" } · preview { action: "status" }            # 查状态
 minihost { action: "stop", port: 31177 } · preview { action: "stop", port: 31188 }
+```
+
+### minihost 的两个细节
+
+- **路由匹配只看路径**：`/api/xxx?fromIndex=true` 按 `/api/xxx` 匹配，query 留给 handler 自己解析
+  （旧实现拿含 query 的完整 URL 比对，任何带参数的接口都会 404）。
+- **宿主服务注入**：插件接线依赖真实服务（`storageDomain` / `sessions` / `workspaceRegistry` 等）时，
+  传 `services` 指向一个模块——该模块默认导出一个「服务对象」或「返回服务对象的函数」，注入项覆盖同名默认服务：
+
+```
+minihost { action: "start", plugin: "<插件根>", port: 31177, services: "<插件根>/test/api/helpers/fake-services.mjs" }
 ```
 
 `backend` 也可以指向真实 DSH 后端（如 `http://127.0.0.1:30800`），此时是「前端模拟 + 真实后端」。
@@ -160,6 +171,7 @@ preview { action: "list" }
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.10 | `minihost` 两处修复/增强：① 路由匹配只看 pathname（`/api/x?y=1` 不再 404，旧实现拿含 query 的完整 URL 比对）；② 新增 `services` 参数注入宿主服务（模块默认导出服务对象或返回它的函数，覆盖同名默认服务）。实测：`/templates?x=1` 由 404→200；注入 storageDomain 后 `/templates` 由 500→200 真实数据。 |
 | 0.1.9 | 测试环境根改为**配置驱动**：参数 `root` > `DSH_TEST_ENV_ROOT` > 插件配置 `<DSH_HOME>/useful-tools/config.json` 的 `testEnvRoot` > 推算。环境目录为 `<根>/<版本>@Save-test`，部署方按配置决定位置，不写死代码路径。 |
 | 0.1.8 | 新增 `test_env` 工具：测试环境（隔离实例）create/start/stop/status，独立 DSH_HOME + 自动端口（3083-3182），路径全由参数/环境决定。`sync_plugin` 增加 `dshHome`（缺省当前实例）、`pluginName`、`register`（写 profile 的 dependencies + bundles，并对齐 node_modules 副本），可把插件直接装进隔离实例。实测：同步 34 文件 + 注册成功，实例启动 `ready:true`、无 failed to import。 |
 | 0.1.7 | `preview gen` 无 spec 时改为**通用自动挂载**：mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect），调插件 `apply(ctx)`，把 `slots.register(def, component)` 捕获到的组件 `createRoot().render()` 到 `#root`。实测 dsh-session-conductor（无 spec）：`#root` 1 个子节点 / 1378 字符 / 捕获 5 个插槽 / 0 错误 / 中文文案正常。spec 从此是可选的增强（自定义 mock 与首屏注入），不再是必填。 |
