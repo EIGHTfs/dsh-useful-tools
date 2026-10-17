@@ -12,7 +12,7 @@
 ### C-101 目录即工具名
 `lib/shared/<名字>/index.js` 一个目录 = 一个工具，注册名就是 `<名字>`（不带前缀、不做驼峰转换）。
 - 依据：`lib/index.js` 的 `listToolDirs()` 扫 `lib/shared/*/index.js`，`name` 取目录名。
-- 验证：`ls lib/shared/` 与工具清单逐项对照；当前应为 `mark_read` / `sync_plugin` / `minihost` / `preview` / `verify_plugin`。
+- 验证：`ls lib/shared/` 与工具清单逐项对照；当前应为 `mark_read` / `sync_plugin` / `minihost` / `preview` / `verify_plugin` / `test_env`。
 - 违反后果：调用方按文档名字调不到工具（历史上 `tool_` / `ut_` 前缀就是这么对不上的）。
 
 ### C-102 一个文件夹一个工具，多动作走 `action`
@@ -52,6 +52,14 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 - 依据：`lib/core/preview/gen.js` + `lib/core/preview/auto-harness.js`。
 - 验证：对无 spec 的 dsh-session-conductor 跑 `gen` → 页面 `#root` 有 1 个子节点 / 1378 字符 / 捕获 5 个插槽 / 0 错误。
 - 违反后果：没 spec 的插件只能看到空壳；或渲染失败白屏、无从判断原因。
+
+### C-107 测试环境是隔离实例，路径全由配置决定
+`test_env` 管理的实例：独立 `DSH_HOME`（默认 `<工作区>/<DSH版本>@Save-test`）、独立端口（3083-3182 首个空闲），
+与主实例完全隔离。环境根/版本/端口一律探测或参数传入，**不写死任何机器路径**；
+`sync_plugin` 的 `dshHome` 同样缺省为当前实例（`process.env.DSH_HOME`），传环境目录即可把插件装进隔离实例。
+- 依据：`lib/core/test-env/index.js` 的 `envRoot` / `detectDshVersion` / `startEnv`；`lib/core/plugin-sync/tools.js` 的 `registerPlugin`。
+- 验证：`test_env { action: "start" }` 返回 `ready:true` 与端口；`sync_plugin { write:true, register:true, dshHome:"<环境目录>" }` 后该环境 profile 的 `dependencies` 与 `dsh.profile.bundles` 均含插件名。
+- 违反后果：测试实例与主实例共用 home/端口，测试崩了会污染生产；或路径写死导致换机不可用。
 
 ---
 

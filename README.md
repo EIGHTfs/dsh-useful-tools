@@ -19,10 +19,11 @@
 |---|---|
 | `mark_read` | 把文件标记为已读（按宿主同一 recipe 补发 `fs/observed`）⇒ 之后原生 write/edit 可直接改 |
 | `mark_read（undo:true）` | 反向撤回：让原生写对该文件恢复「必须先读」门禁 |
-| `sync_plugin` | 把插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`write:true` 真写） |
+| `sync_plugin` | 把插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`write:true` 真写；`register:true` 注册进 profile，`dshHome` 可指向测试环境） |
 | `minihost` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来（start 启动 / stop 停止 / status 状态 / call 请求） |
 | `preview` | **前端模拟**：插件预览页（gen 生成，无 spec 时自动挂载插槽组件 / serve 启动，可反代真实后端或 minihost / stop / status） |
 | `verify_plugin` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码） |
+| `test_env` | 测试环境（隔离实例）：create 创建 / start 启动 / stop 停止 / status 状态；独立 DSH_HOME + 自动端口，随便崩不碰主实例 |
 | 自动标记钩子 | 对配置集合里的工具（默认 `grep`）执行后自动补发观测，无需手动 mark |
 
 ## 用法
@@ -65,6 +66,26 @@ minihost { action: "stop", port: 31177 } · preview { action: "stop", port: 3118
 
 `backend` 也可以指向真实 DSH 后端（如 `http://127.0.0.1:30800`），此时是「前端模拟 + 真实后端」。
 
+## 测试环境（隔离实例）
+
+起一个与主实例完全隔离的 DSH：独立 `DSH_HOME`、独立端口（3083-3182），里面随便装插件、随便改、随便崩。
+
+```
+test_env { action: "status" }                                    # 看两个环境（test/clean）是否存在/运行
+test_env { action: "create", plugin: "<插件根>" }                # 创建 <工作区>/<版本>@Save-test 并把插件装进去
+test_env { action: "start",  plugin: "<插件根>" }                # 创建（若无）并启动，返回端口
+test_env { action: "stop" }                                      # 停止（按端口记录找进程 TERM）
+```
+
+`plugin` 可选：给了就把该插件复制进 `profiles/web/node_modules` 并注册到 bundle 列表；不给就是纯裸环境。
+环境根由参数 `root` 或 `DSH_WORKSPACE` / `DSH_HOME` 上一级「工作区」决定，**不写死路径**。
+
+配合 `sync_plugin` 可以把插件同步 + 注册进这个隔离环境（`dshHome` 指向环境目录即可，缺省是当前实例）：
+
+```
+sync_plugin { write: true, register: true, dshHome: "<环境目录>" }
+```
+
 ## 配置（设置 → 插件 → DSH 有用小工具）
 
 - `observeHook`：自动标记钩子总开关（默认开）
@@ -102,13 +123,15 @@ lib/
 │   ├── sync_plugin/index.js  → 工具 sync_plugin
 │   ├── minihost/index.js     → 工具 minihost   （action=start|call|stop|list）
 │   ├── preview/index.js      → 工具 preview    （action=gen|serve|stop|list）
-│   └── verify_plugin/index.js → 工具 verify_plugin（验证任意插件的装载与工具注册，只静态分析）
+│   ├── verify_plugin/index.js → 工具 verify_plugin（验证任意插件的装载与工具注册，只静态分析）
+│   └── test_env/index.js     → 工具 test_env（测试环境：create/start/stop/status）
 └── core/                    共享实现（不含注册逻辑）
     ├── mark-read/           观测补发 + 台账 + 自动标记钩子
-    ├── plugin-sync/         同步实现（CLI 同款）+ profile 探测 + 原子拷贝
+    ├── plugin-sync/         同步实现（CLI 同款）+ profile 探测 + 原子拷贝 + 注册
     ├── minihost/            主进程 host.mjs + 每请求子进程 host-child.mjs
     ├── preview/             DSH 根/UMD 自探测 + 单文件 HTML 壳 + 静态服务（含 /api 反代）
-    └── verify-plugin/       静态分析（入口/apply/注册调用）+ 部署一致性 + 宿主日志
+    ├── verify-plugin/       静态分析（入口/apply/注册调用）+ 部署一致性 + 宿主日志
+    └── test-env/            隔离实例：环境骨架 / 启停 / 端口探测 / 状态
 ```
 
 **设计契约**：命名、装配、部署、依赖、验证、测试、版本等硬约束见 [docs/CONTRACT.md](docs/CONTRACT.md)
@@ -138,6 +161,7 @@ preview { action: "list" }
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.8 | 新增 `test_env` 工具：测试环境（隔离实例）create/start/stop/status，独立 DSH_HOME + 自动端口（3083-3182），路径全由参数/环境决定。`sync_plugin` 增加 `dshHome`（缺省当前实例）、`pluginName`、`register`（写 profile 的 dependencies + bundles，并对齐 node_modules 副本），可把插件直接装进隔离实例。实测：同步 34 文件 + 注册成功，实例启动 `ready:true`、无 failed to import。 |
 | 0.1.7 | `preview gen` 无 spec 时改为**通用自动挂载**：mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect），调插件 `apply(ctx)`，把 `slots.register(def, component)` 捕获到的组件 `createRoot().render()` 到 `#root`。实测 dsh-session-conductor（无 spec）：`#root` 1 个子节点 / 1378 字符 / 捕获 5 个插槽 / 0 错误 / 中文文案正常。spec 从此是可选的增强（自定义 mock 与首屏注入），不再是必填。 |
 | 0.1.6 | `preview gen` 支持无 spec 兜底：插件没有 `assets/preview.spec.mjs` 时按默认垫片生成页面，返回带 `note`；显式传入不存在的 spec 路径仍报错，不静默降级。 |
 | 0.1.5 | 启停状态统一走工具参数：`preview` 与 `minihost` 新增 `status`（等价 `list`，语义直白，旧名保留）。新增 [docs/NOT-DONE.md](docs/NOT-DONE.md) 记录三项未实现能力（预览页截图、自包含快照、shell 启动器）的评估结论与不做原因。 |
