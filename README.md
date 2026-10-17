@@ -66,8 +66,14 @@ verify_plugin                                          # 巡检所有已装插�
 
 DSH 0.2.1-alpha.2+。装好后需重启 DSH 生效（工具与钩子在启动时装配）。
 
-本插件只注册工具，不提供斜杠指令（宿主 `commands.register` 要求 `input` 必须带非空 `hint`，
-同名指令的收益低于维护成本；要恢复时按该契约补 `input.hint` 即可）。
+本插件只注册工具，不提供斜杠指令（原因与恢复条件见契约 C-204）。
+
+## 文档
+
+| 文件 | 内容 |
+| --- | --- |
+| `README.md` | 门面：简介、工具表、用法、配置、安装、目录结构、版本记录 |
+| `docs/CONTRACT.md` | 契约：命名 / 装配 / 部署 / 依赖 / 验证 / 测试 / 版本的硬约束，实现与验收的唯一依据 |
 
 ## 目录结构（目录即工具名 · 一个文件夹一个工具）
 
@@ -88,13 +94,8 @@ lib/
     └── verify-plugin/       静态分析（入口/apply/注册调用）+ 部署一致性 + 宿主日志
 ```
 
-**三条约定**：
-
-1. **目录即工具名**：`lib/shared/<名字>/index.js` 导出的工具就叫 `<名字>`，装配层不写死任何工具；
-2. **一个文件夹只对应一个工具**：同一功能域的多种动作收进 `action` 参数（如 `minihost` 的 start/call/stop/list），不拆成多个工具；
-3. **功能全部参数化**：路径集合、开关、动作、目标 profile 等一律走参数，代码里不留"某个插件专属"的分支。
-
-新增工具：新建 `lib/shared/<名字>/index.js` 导出 `{ description, parameters, run }` 即可自动生效。
+**设计契约**：命名、装配、部署、依赖、验证、测试、版本等硬约束见 [docs/CONTRACT.md](docs/CONTRACT.md)
+（实现与验收的唯一依据）。新增工具只需新建 `lib/shared/<名字>/index.js` 并导出 `{ description, parameters, run }`。
 
 ## 预览页（统一管理 · 主题插件除外）
 
@@ -120,6 +121,7 @@ preview { action: "list" }
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.4 | 契约独立成文：[docs/CONTRACT.md](docs/CONTRACT.md)（编号 C-101~C-703，含命名/装配/部署/依赖/验证/测试/版本）。README 只保留门面与文档索引，契约细节改为引用，不再两处重复。`docs/` 纳入同步清单。 |
 | 0.1.3 | 新增 `verify_plugin`：验证任意 DSH 插件的装载与工具注册（装配结构静态分析 + 部署一致性 + 宿主日志；只读文件、不执行被验证插件的代码），支持传插件名或根目录，缺省巡检所有已装插件。 |
 | 0.1.2 | 移除斜杠指令：宿主 `commands.register` 要求 `input` 必须带非空 `hint`，原实现传 `input: { type: 'string' }` 使四条指令全部注册失败；该功能收益低于维护成本，直接移除，只保留工具。README 里的工具名同步为实际注册名（`mark_read` / `sync_plugin` / `minihost` / `preview`）。 |
 | 0.1.1 | 修复装配入口 `apply` 返回普通对象的问题：cordis 把 apply 返回值当 effect 收集，普通对象会抛 `TypeError: Invalid effect`，整条插件 fiber 随即卸载，四个工具全部不注册。改为只写日志、不返回值。 |
