@@ -52,7 +52,7 @@ verify_plugin                               # 巡检所有已装插件
 ```
 minihost { action: "start", plugin: "<插件根>", port: 31177 }          # ① 起后端（插件服务端代码）
 preview  { action: "gen",   plugin: "<插件根>" }                        # ② 生成前端预览页（无 spec 时自动挂载插槽组件）
-preview  { action: "serve", file: "<插件根>/assets/preview.html", backend: "http://127.0.0.1:31177" }
+preview  { action: "serve", file: "<插件根>/assets/preview.html", backend: "http://<本机IP>:31177" }
                                                                         # ③ 起前端，/api/* 打到 ①
 minihost { action: "status" } · preview { action: "status" }            # 查状态
 minihost { action: "stop", port: 31177 } · preview { action: "stop", port: 31188 }
@@ -69,7 +69,7 @@ minihost { action: "stop", port: 31177 } · preview { action: "stop", port: 3118
 minihost { action: "start", plugin: "<插件根>", port: 31177, services: "<插件根>/test/api/helpers/fake-services.mjs" }
 ```
 
-`backend` 也可以指向真实 DSH 后端（如 `http://127.0.0.1:30800`），此时是「前端模拟 + 真实后端」。
+`backend` 也可以指向真实 DSH 后端（如 `http://<本机IP>:30800`），此时是「前端模拟 + 真实后端」。
 
 ## 测试环境（隔离实例）
 
@@ -179,8 +179,9 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.16 | 修 `sync_plugin` 源目录 bug：缺省 `source` 少上溯两层（停在 `lib/core`），`packageFilesOf` 读不到 `package.json`，每次同步都是「0 文件空操作」却返回 `ok:true`——已改为上溯三层（`tools.js` 用 `fileURLToPath`，`sync-plugin.mjs` 的 `SOURCE_ROOT` 同步修正），实测同步写入 5 文件、副本 README/package.json 一致。另：README 示例地址改 `<本机IP>` 占位（不再写本机回环）；CONTRACT C-402 改为「允许探测候选、环境变量/参数优先且不得作为唯一来源」，C-601 测试数改 5 份，补记 0.1.9/0.1.10/0.1.13 契约更新；sync-plugin 顶部注释与 files 白名单对齐。 |
 | 0.1.15 | 修 minihost 启动 TDZ 回归：`host.mjs` 的 `TIMEOUT_MS` 引用了后面才定义的 `DEFAULT_TIMEOUT_MS`（`Cannot access before initialization`），已把常量定义前移；实测 `minihost start` 正常、请求 200。另在 preview/minihost 工具描述里注明「参数定义在实例加载期注册，更新插件后需重载实例」。 |
-| 0.1.14 | `preview serve` 支持局域网访问：新增 `host`（缺省 127.0.0.1，可传 0.0.0.0）与 `lan:true`（等价 0.0.0.0）；监听 0.0.0.0 时返回 `lanUrl`（本机第一个非回环 IPv4，如 `http://10.10.31.218:31200/`），原 `url`（127.0.0.1）保留。实测：`ss` 显示 `0.0.0.0:31200 LISTEN`，局域网与回环均 200。 |
+| 0.1.14 | `preview serve` 支持局域网访问：新增 `host`（缺省仅监听本机回环，可传 0.0.0.0）与 `lan:true`（等价 0.0.0.0）；监听 0.0.0.0 时返回 `lanUrl`（本机第一个非回环 IPv4，如 `http://10.10.31.218:31200/`），原 `url` 保留本机回环地址。实测：`ss` 显示 `0.0.0.0:31200 LISTEN`，局域网与回环均 200。 |
 | 0.1.13 | `mark_read` 支持 `bash` 里跑的命令：钩子解析命令串（`cat a.txt`、`grep x b.txt`），命令名在集合里就标记其文件参数——`cat` 不再必须写成宿主工具。命令名做**跨平台别名归一**：`Get-Content`/`gc`/`type`/`more`→cat，`Select-String`/`sls`/`findstr`→grep，去 `.exe`/`.cmd`/`.bat`/`.ps1` 后缀。实测：`bash cat c.txt` 后直接 edit 成功。 |
 | 0.1.12 | `mark_read` 重做：语义从「按文件标记」改为「**读命令集合**」——两个参数 `commands`（命令串，或传文件路径从文件读，不传用预置清单 `read-commands.json`）+ `undo`（撤销）；集合里的命令读过的**所有文件**自动生效。配置落盘 `<DSH_HOME>/useful-tools/config.json`，钩子每次现读 ⇒ 命令配置一次、永久有效（改完即时生效、重启仍在）。移除 `paths` / `file_path` / `all`（要指定文件直接 `read`）。 |
 | 0.1.11 | `preview` 自动挂载修复 TDZ：`__ModuleLoader__.load` 只登记 entry，`factory` 统一延迟到 `setTimeout(0)`（client.js 整体执行完之后）再调用。实测 dsh-skill-scoreboard：修复前无插槽可渲染，修复后 `#root` 渲染出真实界面。 |

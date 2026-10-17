@@ -150,9 +150,15 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 - 违反后果：插件要装依赖才能起，部署与迁移成本陡增。
 
 ### C-402 不写死路径
-`DSH_HOME`、profile、日志、部署目标一律运行时探测；代码里不出现机器专属绝对路径。
-- 依据：`defaultPluginRoot()`、`inspectProfiles`、`detectTargets`、`logCandidates` 均为探测。
-- 验证：`grep -rn "/volume1\|/var/packages" lib/` 应为空。
+`DSH_HOME`、profile、日志、部署目标一律运行时探测；代码里不出现**作为唯一来源**的机器专属绝对路径。
+探测候选（套件安装位、数据根等）允许存在，但必须同时满足三条：
+① 集中在文件顶部常量；② 环境变量或工具参数优先（`DSH_ROOT` / `DSH_HOME` / `--deps` 等）；
+③ 候选只是兜底，前面必须有上溯探测或环境探测。
+- 依据：`defaultPluginRoot()`、`inspectProfiles`、`detectTargets`、`logCandidates` 均为探测；
+  `lib/core/preview/locate.js` 的 `DSH_ROOT_CANDIDATES` / `DSH_HOME_ROOTS`、`lib/core/minihost/host.mjs`
+  的 `SUITE_NODE_MODULES` 是候选清单（env 优先、上溯在前）。
+- 验证：`grep -rn "/volume1\|/var/packages" lib/` 的每一处命中都必须是候选常量，且同文件存在环境变量优先分支；
+  不得出现在候选清单之外的业务逻辑里。
 - 违反后果：换机/换版本目录即失效。
 
 ### C-403 单文件不超过 400 行
@@ -196,7 +202,7 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
-- 依据：`test/` 现有 4 份测试，`package.json` 的 `test` 脚本为 `node --test test/*.mjs`。
+- 依据：`test/` 现有 5 份测试，`package.json` 的 `test` 脚本为 `node --test test/*.mjs`。
 - 验证：`npm test`（或 `node --test test/*.mjs`）全绿。
 - 违反后果：装配类 bug 只能靠宿主日志发现（本次 `Invalid effect` 藏了很久）。
 
@@ -235,4 +241,8 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.16 | C-402 允许探测候选（环境变量/参数优先、不得作为唯一来源）；C-601 测试数改 5 份；补记 0.1.9 / 0.1.10 / 0.1.13 三次契约内容更新。 |
+| 0.1.13 | C-109 补「bash 命令串也算读」与跨平台别名归一。 |
+| 0.1.10 | C-108 补路由只看 pathname 与 `services` 宿主服务注入。 |
+| 0.1.9 | C-107 补测试环境根配置驱动（参数 > 环境变量 > 插件配置 > 推算）。 |
 | 0.1.4 | 首版：把散落在 README 与代码注释里的设计约定收拢成编号契约，README 改为引用。 |
