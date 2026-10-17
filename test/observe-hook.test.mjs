@@ -1,7 +1,7 @@
 /** 自动标记钩子回归：名单/多形态解析/放行不改结果/失败不阻断/开关。 */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { collectReadPaths, registerObserveHook, DEFAULT_OBSERVE_TOOLS, MAX_FILES_PER_CALL } from '../lib/mark-read/hook.js';
+import { collectReadPaths, registerObserveHook, DEFAULT_OBSERVE_TOOLS, MAX_FILES_PER_CALL } from '../lib/core/mark-read/hook.js';
 
 function fakeFsCtx({ throwOnResolve = false } = {}) {
   const emitted = [];
