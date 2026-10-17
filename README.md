@@ -19,6 +19,10 @@
 |---|---|
 | `mark_read` | 把文件标记为已读（按宿主同一 recipe 补发 `fs/observed`）⇒ 之后原生 write/edit 可直接改 |
 | `mark_read（undo:true）` | 反向撤回：让原生写对该文件恢复「必须先读」门禁 |
+| `sync_plugin` | 把插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`write:true` 真写） |
+| `minihost` | 本地 mini 宿主：跑插件服务端代码（action=start/call/stop/list） |
+| `preview` | 插件预览页生成/服务/停止/列表（action=gen/serve/stop/list） |
+| `verify_plugin` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码） |
 | 自动标记钩子 | 对配置集合里的工具（默认 `grep`）执行后自动补发观测，无需手动 mark |
 
 ## 用法
@@ -27,7 +31,23 @@
 mark_read  paths: "/volume1/xx/a.js,/volume1/xx/b.js"   # 逗号分隔一次多个
 mark_read undo:true file_path: "/volume1/xx/a.js"      # 撤销单个文件
 mark_read undo:true all:true                           # 全部还原成宿主原生状态
+
+verify_plugin plugin: "dsh-git-push"                   # 验单个插件（也可传插件根目录）
+verify_plugin                                          # 巡检所有已装插件
 ```
+
+`verify_plugin` 给三项证据，专治「装完插件发现工具没出现」：
+
+1. **装配结构**（静态读源码）：入口是否存在、是否导出 `apply`、是否有 tools 注册调用、
+   `apply` 顶层是否 `return {`（cordis 会判 `Invalid effect` 并卸载整条 fiber，工具全部失效）、
+   `cordis.patch.yml` 是否有顶层 `- insert:`。入口用 `export *` 转出的会跟进去看。
+2. **部署一致性**：源码根 vs profile 的 local-plugins/node_modules 副本逐文件比内容，
+   不一致说明宿主跑的不是你改的代码。
+3. **宿主日志**：扫 `did not activate` / `TypeError` 等行；日志早于源码最后修改时间的
+   判为修复前的历史记录，降级为提示。
+
+只读文件、不 import 被验证插件——插件模块顶层和 `apply` 都可能带副作用，验证不该把它跑起来。
+代价是「注册是否真的成功」仍需宿主内实测（工具是否出现在会话里），输出里的 `staticOnly`/`notes` 会标注这一点。
 
 ## 配置（设置 → 插件 → DSH 有用小工具）
 
@@ -58,12 +78,14 @@ lib/
 │   ├── mark_read/index.js    → 工具 mark_read
 │   ├── sync_plugin/index.js  → 工具 sync_plugin
 │   ├── minihost/index.js     → 工具 minihost   （action=start|call|stop|list）
-│   └── preview/index.js      → 工具 preview    （action=gen|serve|stop|list）
+│   ├── preview/index.js      → 工具 preview    （action=gen|serve|stop|list）
+│   └── verify_plugin/index.js → 工具 verify_plugin（验证任意插件的装载与工具注册，只静态分析）
 └── core/                    共享实现（不含注册逻辑）
     ├── mark-read/           观测补发 + 台账 + 自动标记钩子
     ├── plugin-sync/         同步实现（CLI 同款）+ profile 探测 + 原子拷贝
     ├── minihost/            主进程 host.mjs + 每请求子进程 host-child.mjs
-    └── preview/             DSH 根/UMD 自探测 + 单文件 HTML 壳 + 静态服务（含 /api 反代）
+    ├── preview/             DSH 根/UMD 自探测 + 单文件 HTML 壳 + 静态服务（含 /api 反代）
+    └── verify-plugin/       静态分析（入口/apply/注册调用）+ 部署一致性 + 宿主日志
 ```
 
 **三条约定**：
@@ -98,6 +120,7 @@ preview { action: "list" }
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.3 | 新增 `verify_plugin`：验证任意 DSH 插件的装载与工具注册（装配结构静态分析 + 部署一致性 + 宿主日志；只读文件、不执行被验证插件的代码），支持传插件名或根目录，缺省巡检所有已装插件。 |
 | 0.1.2 | 移除斜杠指令：宿主 `commands.register` 要求 `input` 必须带非空 `hint`，原实现传 `input: { type: 'string' }` 使四条指令全部注册失败；该功能收益低于维护成本，直接移除，只保留工具。README 里的工具名同步为实际注册名（`mark_read` / `sync_plugin` / `minihost` / `preview`）。 |
 | 0.1.1 | 修复装配入口 `apply` 返回普通对象的问题：cordis 把 apply 返回值当 effect 收集，普通对象会抛 `TypeError: Invalid effect`，整条插件 fiber 随即卸载，四个工具全部不注册。改为只写日志、不返回值。 |
 | 0.1.0 | 首个版本：`mark_read` / `sync_plugin` / `minihost` / `preview` 四工具 + 自动标记钩子。 |
