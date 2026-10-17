@@ -4,6 +4,10 @@
 「cannot modify "…": file has not been read」门禁误伤（内容明明已经用 grep/脚本等
 方式看过，原生写仍要求先用 read 工具读一遍）。
 
+## 用法一览（撤销是参数，不是另一个工具）
+
+一个工具双向用法：不带 undo = 增加；undo:true = 撤销；all:true 作用于标记台账。
+
 ## 功能
 
 | 工具 | 作用 |
@@ -16,7 +20,8 @@
 
 ```
 mark_read  paths: "/volume1/xx/a.js,/volume1/xx/b.js"   # 逗号分隔一次多个
-unmark_read file_path: "/volume1/xx/a.js"               # 单个文件
+mark_read undo:true file_path: "/volume1/xx/a.js"      # 撤销单个文件
+mark_read undo:true all:true                           # 全部还原成宿主原生状态
 ```
 
 ## 配置（设置 → 插件 → DSH 有用小工具）
@@ -35,3 +40,5 @@ unmark_read file_path: "/volume1/xx/a.js"               # 单个文件
 ## 安装
 
 DSH 0.2.1-alpha.2+。装好后需重启 DSH 生效（工具与钩子在启动时装配）。
+
+另有用户指令 `/mark-read [--undo] [--all] <路径…>`（结果只给界面，不进模型历史）。
