@@ -1,5 +1,7 @@
+# 第三方 bundle patch 标准写法：顶层 `- insert:` 后接**列表**（新建 loader 行）。
+# 无 insert 的顶层 `- id:` 是覆盖已有行；基座没有该 id 时市场会报 patch target not found。
 - insert:
-  id: dsh-useful-tools
-  name: dsh-useful-tools
-  config:
-    enabled: true
+    - id: dsh-useful-tools
+      name: dsh-useful-tools
+      config:
+        enabled: true

@@ -62,3 +62,24 @@ DSH 0.2.1-alpha.2+。装好后需重启 DSH 生效（工具与钩子在启动时
 入口 `lib/index.js` 只做装配（逐域 register*），不含业务逻辑。
 
 数据/运行时产物统一落 `.minihost/`（pid 台账与日志，git 忽略）。
+
+## 预览页（统一管理 · 主题插件除外）
+
+```
+通用件（本插件）  lib/preview/：DSH 根与 DSH_HOME 自探测 · React UMD 缓存 · 单文件 HTML 壳
+                  · 静态服务 + /api 反代 · 进程台账（.preview/instances.json）
+插件自持          assets/preview.spec.mjs（垫片 harness / 假数据 / 首屏注入 post / 输出路径）
+                 └ 默认字段：{ title, css, harness, body, post, client, output }
+主题插件          允许完全自持预览（皮肤注入与真实渲染强耦合，不走本工具）
+```
+
+```bash
+# 工具
+preview_gen   { plugin: "<插件根>", spec?, out? }      # 生成单文件 preview.html（内联 React UMD）
+preview_serve { file: "<preview.html>", port?, backend? }  # 起服务；给 backend 则 /api/* 反代真实后端
+preview_stop  { port | file } · preview_list {}
+# 指令
+/preview gen <插件根> · /preview serve <html> [端口] [backend] · /preview stop <端口> · /preview list
+```
+
+实测（2026-10-17）：夹具插件 gen 产出 1.14MB 单文件 → serve 200 → 页面含预期标记 → stop 清台账 ✓。

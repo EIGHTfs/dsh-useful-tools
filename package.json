@@ -1,10 +1,27 @@
 {
   "name": "dsh-useful-tools",
   "version": "0.1.0",
+  "description": "DSH 有用小工具箱：文件已读标记（mark_read）+ 插件同步（sync_plugin）+ mini 宿主（minihost_*）",
   "type": "module",
-  "description": "DSH 有用小工具箱：首个工具为「文件观测标记」——让 grep 等读过内容的文件可被原生 write/edit 直接修改，并提供反向撤回",
   "main": "lib/index.js",
-  "scripts": { "test": "node --test test/*.mjs" },
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "test",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.mjs"
+  },
   "license": "MIT",
   "private": true
 }
