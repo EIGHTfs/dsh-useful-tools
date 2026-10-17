@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -30,6 +30,12 @@ async function withHome(fn) {
 function storeFile(home) {
   return join(home, 'useful-tools', 'quick-commands.json');
 }
+
+/**
+ * 跨平台「打印当前目录」命令：不用 shell 内置（pwd 只有 bash 系有，cmd 要用 cd），
+ * 统一走 node，Windows/Linux/macOS 行为一致。
+ */
+const PRINT_CWD = 'node -e "process.stdout.write(process.cwd())"';
 
 test('list：首次没有文件时返回预置 restart，并标记 preset', async () => {
   await withHome(async (home) => {
@@ -139,7 +145,7 @@ test('run：未知名字报错并给出可选名字', async () => {
 
 test('run：超时会被终止并标记 timedOut', async () => {
   await withHome(async () => {
-    await runQuickCommand({ action: 'add', name: 'slow', command: 'sleep 5' });
+    await runQuickCommand({ action: 'add', name: 'slow', command: 'node -e "setTimeout(()=>{},5000)"' });
     const r = await runQuickCommand({ action: 'run', name: 'slow', timeoutMs: 1000 });
     assert.equal(r.ok, false);
     assert.equal(r.timedOut, true);
@@ -151,5 +157,63 @@ test('非法快捷名被拒（不写进 JSON）', async () => {
     const r = await runQuickCommand({ action: 'add', name: 'bad name', command: 'echo x' });
     assert.equal(r.ok, false);
     assert.match(r.error, /不合法/);
+  });
+});
+
+test('cwd：add 带目录，run 时在该目录执行（pwd 输出即它）', async () => {
+  await withHome(async (home) => {
+    const dir = join(home, 'workdir');
+    mkdirSync(dir, { recursive: true });
+    const added = await runQuickCommand({ action: 'add', name: 'pwdin', command: PRINT_CWD, cwd: dir });
+    assert.equal(added.ok, true);
+    assert.equal(added.cwd, dir, 'cwd 应解析成绝对路径');
+    const r = await runQuickCommand({ action: 'run', name: 'pwdin' });
+    assert.equal(r.ok, true);
+    // 用 realpath 比较：os.tmpdir() 是逻辑路径（/var/packages/.../tmp），
+    //   而命令里的 pwd 输出物理路径（/volume1/@apptemp/...），同一目录两种视图
+    assert.equal(realpathSync(r.stdout.trim()), realpathSync(dir));
+    assert.equal(r.cwd, dir);
+  });
+});
+
+test('cwd：run 单独传 cwd 只对本次生效，不改定义', async () => {
+  await withHome(async (home) => {
+    const dir = join(home, 'other');
+    mkdirSync(dir, { recursive: true });
+    await runQuickCommand({ action: 'add', name: 'plain', command: PRINT_CWD });
+    const r = await runQuickCommand({ action: 'run', name: 'plain', cwd: dir });
+    assert.equal(realpathSync(r.stdout.trim()), realpathSync(dir), '本次执行应在传入目录');
+    assert.equal(r.persisted, false);
+    const raw = JSON.parse(readFileSync(storeFile(home), 'utf8'));
+    assert.equal(raw.plain.cwd, undefined, '临时 cwd 不应写进定义');
+  });
+});
+
+test('cwd：不存在的目录被拒（add 与 run 都校验）', async () => {
+  await withHome(async (home) => {
+    const missing = join(home, 'nope-dir');
+    const added = await runQuickCommand({ action: 'add', name: 'badcwd', command: PRINT_CWD, cwd: missing });
+    assert.equal(added.ok, false);
+    assert.match(added.error, /cwd 不存在/);
+
+    await runQuickCommand({ action: 'add', name: 'ok', command: PRINT_CWD });
+    const run = await runQuickCommand({ action: 'run', name: 'ok', cwd: missing });
+    assert.equal(run.ok, false);
+    assert.match(run.error, /cwd 不存在/);
+  });
+});
+
+test('cwd：edit 可改执行目录', async () => {
+  await withHome(async (home) => {
+    const a = join(home, 'a');
+    const b = join(home, 'b');
+    mkdirSync(a, { recursive: true });
+    mkdirSync(b, { recursive: true });
+    await runQuickCommand({ action: 'add', name: 'move', command: PRINT_CWD, cwd: a });
+    const edited = await runQuickCommand({ action: 'edit', name: 'move', cwd: b });
+    assert.equal(edited.ok, true);
+    assert.equal(edited.cwd, b);
+    const r = await runQuickCommand({ action: 'run', name: 'move' });
+    assert.equal(realpathSync(r.stdout.trim()), realpathSync(b));
   });
 });
