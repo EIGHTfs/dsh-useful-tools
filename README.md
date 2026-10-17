@@ -217,6 +217,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.22 | CI 回到固定 `ubuntu-latest` × Node 20/22/24：CI 是门禁，环境固定才稳定；跨平台能力（`cmd /c` 分支、测试不依赖 shell 内置命令）保留在代码里，但 Windows 不挂进每次提交的门禁（其 spawn cwd 与 cmd 引号语义尚未验证，需真实环境单独验证）。 |
 | 0.1.21 | `quick_command` 去掉内置预置：定义完全来自 `<DSH_HOME>/useful-tools/quick-commands.json`，首次是空表（`list` 返回 `count:0` 并提示用 add），`restart` 这类本机命令由使用方自己 add。测试入口改为跨平台 runner `node test/run-tests.mjs`（自扫 `*.test.mjs`，不依赖 Node 20 不支持的 glob 与 Windows 不展开的通配符）。 |
 | 0.1.20 | `quick_command` 支持 `cwd` 执行目录：缺省空 = 宿主进程 cwd，传了先校验「存在且是目录」并解析成绝对路径；`add`/`edit`/`run` 带 `command` 时随定义落盘，`run` 单独传只对本次生效。跨平台加固：单测不再依赖 shell 内置命令（用 node 打印 cwd）、测试文件统一改名 `*.test.mjs` 用 Node 自身展开 glob，CI 矩阵增加 `windows-latest`。 |
 | 0.1.19 | 新增 `useful_tools` 工具：动态扫描 `lib/shared` 输出本插件全部工具（名字/说明/参数/示例调用），`action=help`（缺省）/ `list`，`tool` 可只看单个。另修 `quick_command` 预置命令在探测不到 `start.sh` 时把占位符替换成空串的问题（改为保留 `{startScript}`，执行时报错暴露）。 |

@@ -231,7 +231,9 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 - 依据：`test/` 现有 7 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
 - 入口：`test/run-tests.mjs` 自己扫描 `*.test.mjs` 再把文件列表传给 `node --test`——不依赖 glob
   （Node 20 不支持 `--test` 的 glob，Windows 的 shell 也不展开通配符）。
-- CI：`.github/workflows/test.yml` 在 push master 与 PR 时用 `ubuntu-latest` + `windows-latest` × Node 20/22/24 矩阵跑同一命令（零依赖，无需 npm install）。
+- CI：`.github/workflows/test.yml` **固定 `ubuntu-latest`** × Node 20/22/24 跑同一命令（零依赖，无需 npm install）。
+  CI 是门禁，环境固定才稳定；跨平台能力由代码保留，但不把 Windows 挂进每次提交的门禁
+  （Windows 上 spawn 的 cwd 传递与 cmd 引号/重定向语义尚未验证，需真实环境单独验证）。
 - 验证：`npm test` 全绿。
 - 跨平台：测试里不得依赖 shell 内置命令（`pwd`/`sleep`/`ls` 只有某类 shell 有），一律用 `node -e` 代替。
 - 违反后果：装配类 bug 只能靠宿主日志发现（本次 `Invalid effect` 藏了很久）。
@@ -271,6 +273,7 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.22 | C-601 CI 矩阵固定 `ubuntu-latest`（去掉 `windows-latest`）：CI 是门禁，环境固定才稳定；跨平台能力由代码保留，Windows 未验证不进门禁。 |
 | 0.1.21 | C-110 明确「无内置预置」（定义只来自 quick-commands.json，首次为空表）；C-601 单测入口改为 `test/run-tests.mjs`（自扫文件，不依赖 glob）。 |
 | 0.1.20 | C-110 补 `cwd` 语义（缺省宿主 cwd、必须存在且是目录）与跨平台要求（`bash -c` / `cmd /c`，预置 restart 仅 Linux/macOS）；C-601 单测入口改为 Node 自身展开的 glob、CI 增加 `windows-latest`、明确测试不得依赖 shell 内置命令。 |
 | 0.1.16 | C-402 允许探测候选（环境变量/参数优先、不得作为唯一来源）；C-601 测试数改 5 份；补记 0.1.9 / 0.1.10 / 0.1.13 三次契约内容更新。 |

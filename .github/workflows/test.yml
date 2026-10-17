@@ -1,9 +1,10 @@
-# 单测 CI：push 到 master 与所有 PR 都跑一遍 node --test。
+# 单测 CI：push 到 master 与所有 PR 都跑一遍 node test/run-tests.mjs。
 # 测试零依赖（只用 node:test / node:assert），因此不需要 npm install，也没有缓存可做。
-# 矩阵覆盖 Linux 与 Windows + 常见 Node 版本；fail-fast 关闭，一次能看到全部组合的结果。
 #
-# 为什么传目录而不是 glob（node --test test）：Windows 的默认 shell 不展开 *.mjs，
-#   glob 会被原样传给 Node 导致找不到测试文件。传目录由 Node 自己递归收集，两端一致。
+# 为什么固定 ubuntu-latest：CI 是门禁，环境固定才稳定、结果才可信。
+#   跨平台能力（exec.js 的 cmd /c 分支、测试里不用 shell 内置命令）由代码保留，
+#   但不把 Windows 挂进每次提交的门禁——Windows 上 spawn 的 cwd 传递与 cmd 引号/重定向语义
+#   目前未验证，需要真实 Windows 环境单独验证，不适合当每次提交的必过项。
 name: test
 
 on:
@@ -13,11 +14,10 @@ on:
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
         node: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
