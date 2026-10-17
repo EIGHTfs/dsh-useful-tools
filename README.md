@@ -8,6 +8,11 @@
 
 一个工具双向用法：不带 undo = 增加；undo:true = 撤销；all:true 作用于标记台账。
 
+## 开发者能力（本插件自带）
+
+- `sync_plugin` 工具 / `/sync-plugin` 指令：把本插件工作区代码同步到 profile 的 local-plugins（缺省 dryRun，`--write` 真写；软链布局下免重启热重载）——由原 dsh-git-push 的 sync-plugin.mjs 收编而来
+- `assets/dsh-plugin-minihost.mjs` + `dsh-plugin-minihost-child.mjs`：通用插件 minihost（模拟装配 / dev 直通），散落各处的副本归拢于此；用到 minihost 的插件建议改为引用本插件能力
+
 ## 功能
 
 | 工具 | 作用 |
