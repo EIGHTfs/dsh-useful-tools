@@ -1,5 +1,5 @@
 /**
- * 宿主观测补发回归（2026-10-17 探针实验固化）
+ * 宿主观测补发回归（探针实验固化）
  *
  * 实验结论（实测）：我们补发 `fs/observed`（present + 当前 version，actor=本次 exec）之后，
  *   官方原生 write/edit 就能直接改这个文件，不再报 cannot modify "…": file has not been read ✓

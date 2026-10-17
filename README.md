@@ -20,7 +20,7 @@
 ```
 mark_read commands: "cat,grep,head"        # 加入读命令集合（持久生效）
 mark_read                                   # 不传 commands = 用预置清单（20 个常见读文件命令）
-mark_read commands: "/tmp/cmds.txt"         # 从文件读命令集合（每行/逗号一个）
+mark_read commands: "<命令清单文件路径>"      # 从文件读命令集合（每行/逗号一个）
 mark_read commands: "grep" undo: true       # 撤销 grep（从集合移除）
 
 verify_plugin plugin: "dsh-git-push"        # 验单个插件（也可传插件根目录）

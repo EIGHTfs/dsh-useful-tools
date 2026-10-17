@@ -16,25 +16,25 @@ import { dshRootOf, readHmrConfig, judgeHmr, planInstall, applyInstall, depHints
 
 /** 造一个假 DSH_HOME：<tmp>/.dsh/profiles/web（withDsh=false 时目录结构只到 <tmp>/profiles/web）。 */
 function fakeHome({ profile = 'web' } = {}) {
-  const tmp = mkdtempSync(join(tmpdir(), 'dsh-sync-install-'));
-  const dsh = join(tmp, '.dsh');
+  const sandboxDir = mkdtempSync(join(tmpdir(), 'dsh-sync-install-'));
+  const dsh = join(sandboxDir, '.dsh');
   const pd = join(dsh, 'profiles', profile);
   mkdirSync(join(pd, 'local-plugins'), { recursive: true });
   mkdirSync(join(pd, 'node_modules'), { recursive: true });
-  return { tmp, dsh, pd };
+  return { sandboxDir, dsh, pd };
 }
 const clean = (p) => { try { rmSync(p, { recursive: true, force: true }); } catch { /* noop */ } };
 
 test('dshRootOf：DSH_HOME 本尊与已含 .dsh 两种形态都能定位', () => {
-  const { tmp, dsh } = fakeHome();
+  const { sandboxDir, dsh } = fakeHome();
   try {
-    assert.equal(dshRootOf(tmp), dsh, 'DSH_HOME 本尊（不含 .dsh）应补出 .dsh');
+    assert.equal(dshRootOf(sandboxDir), dsh, 'DSH_HOME 本尊（不含 .dsh）应补出 .dsh');
     assert.equal(dshRootOf(dsh), dsh, '已含 .dsh 的路径应原样使用');
-  } finally { clean(tmp); }
+  } finally { clean(sandboxDir); }
 });
 
 test('judgeHmr：root 为空 ⇒ 不可热重载（module roots are opt-in）', () => {
-  const { tmp, pd } = fakeHome();
+  const { sandboxDir, pd } = fakeHome();
   try {
     writeFileSync(join(pd, 'cordis.patch.yml'), '- id: hmr\n  config:\n    base: ' + pd + '\n    root: []\n', 'utf8');
     mkdirSync(join(pd, 'local-plugins', 'p1'), { recursive: true });
@@ -42,11 +42,11 @@ test('judgeHmr：root 为空 ⇒ 不可热重载（module roots are opt-in）', 
     const r = judgeHmr({ hmr, profileDir: pd, pluginName: 'p1' });
     assert.equal(r.hot, false);
     assert.match(r.reason, /root 为空|opt-in/);
-  } finally { clean(tmp); }
+  } finally { clean(sandboxDir); }
 });
 
 test('judgeHmr：root 覆盖 local-plugins ⇒ 可热重载；只在 node_modules ⇒ 不可', () => {
-  const { tmp, pd } = fakeHome();
+  const { sandboxDir, pd } = fakeHome();
   try {
     writeFileSync(join(pd, 'cordis.patch.yml'), `- id: hmr\n  config:\n    base: ${pd}\n    root:\n      - local-plugins\n`, 'utf8');
     mkdirSync(join(pd, 'local-plugins', 'p1'), { recursive: true });
@@ -58,13 +58,13 @@ test('judgeHmr：root 覆盖 local-plugins ⇒ 可热重载；只在 node_module
     const r2 = judgeHmr({ hmr, profileDir: pd, pluginName: 'p2' });
     assert.equal(r2.hot, false);
     assert.match(r2.reason, /node_modules|剪枝|覆盖范围/);
-  } finally { clean(tmp); }
+  } finally { clean(sandboxDir); }
 });
 
 test('planInstall：真源只认 local-plugins；副本**内容漂移**才报警（同内容硬链接副本不报）', () => {
-  const { tmp, pd } = fakeHome();
+  const { sandboxDir, pd } = fakeHome();
   try {
-    const outside = join(tmp, 'outside-plugin');
+    const outside = join(sandboxDir, 'outside-plugin');
     mkdirSync(outside, { recursive: true });
     // node_modules 是（绝对）软链：已不属本工具职责 ⇒ 不产生任何 node_modules 相关待办
     symlinkSync(outside, join(pd, 'node_modules', 'p1'));
@@ -90,13 +90,13 @@ test('planInstall：真源只认 local-plugins；副本**内容漂移**才报警
     rmSync(join(pd, 'local-plugins', 'p1'), { recursive: true, force: true });
     symlinkSync(outside, join(pd, 'local-plugins', 'p1'));
     assert.ok(planInstall({ profileDir: pd, pluginName: 'p1' }).some((x) => x.kind === 'delink-local'));
-  } finally { clean(tmp); }
+  } finally { clean(sandboxDir); }
 });
 
 test('applyInstall：默认不写盘；on=true 只处理 local-plugins，不碰 node_modules', () => {
-  const { tmp, pd } = fakeHome();
+  const { sandboxDir, pd } = fakeHome();
   try {
-    const outside = join(tmp, 'outside-plugin');
+    const outside = join(sandboxDir, 'outside-plugin');
     mkdirSync(outside, { recursive: true });
     // local-plugins 是指向 outside 的软链（真源内容 = outside/*）
     writeFileSync(join(outside, 'package.json'), '{"version":"9.9.9"}', 'utf8');
@@ -113,11 +113,11 @@ test('applyInstall：默认不写盘；on=true 只处理 local-plugins，不碰 
     assert.equal(lstatSync(join(pd, 'local-plugins', 'p1')).isSymbolicLink(), false, '解链后应是真实目录');
     assert.deepEqual(r.skipped, ['nm-drift'], 'node_modules 相关只报告、不动盘');
     assert.equal(lstatSync(join(pd, 'node_modules', 'p1')).isDirectory(), true, '不应删掉 node_modules 里的既有数据');
-  } finally { clean(tmp); }
+  } finally { clean(sandboxDir); }
 });
 
 test('depHints：link:绝对路径应提示改 file:local-plugins/<插件>', () => {
-  const { tmp, pd } = fakeHome();
+  const { sandboxDir, pd } = fakeHome();
   try {
     writeFileSync(join(pd, 'package.json'), JSON.stringify({ name: 'web', dependencies: { p1: 'link:/abs/path/p1' } }, null, 2), 'utf8');
     const h = depHints(pd, 'p1');
@@ -125,12 +125,12 @@ test('depHints：link:绝对路径应提示改 file:local-plugins/<插件>', () 
     assert.match(h[0], /file:local-plugins\/p1/);
     writeFileSync(join(pd, 'package.json'), JSON.stringify({ name: 'web', dependencies: { p1: 'file:local-plugins/p1' } }, null, 2), 'utf8');
     assert.deepEqual(depHints(pd, 'p1'), [], '已正确则不应有提示');
-  } finally { clean(tmp); }
+  } finally { clean(sandboxDir); }
 });
 
 test('pickProfile：优先 local-plugins；多命中要求显式；只在 node_modules 也算命中', () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'dsh-pick-'));
-  const proot = join(tmp, '.dsh', 'profiles');
+  const sandboxDir = mkdtempSync(join(tmpdir(), 'dsh-pick-'));
+  const proot = join(sandboxDir, '.dsh', 'profiles');
   for (const n of ['a', 'b']) {
     mkdirSync(join(proot, n, 'local-plugins'), { recursive: true });
     mkdirSync(join(proot, n, 'node_modules'), { recursive: true });
@@ -138,20 +138,20 @@ test('pickProfile：优先 local-plugins；多命中要求显式；只在 node_m
   try {
     // 只有 b 的 local-plugins 有 p1 ⇒ 应选 b（本条正是 dry-run 实测踩到的坑：自动取首个会选到错 profile）
     mkdirSync(join(proot, 'b', 'local-plugins', 'p1'), { recursive: true });
-    const r1 = pickProfile(inspectProfiles(tmp), 'p1');
+    const r1 = pickProfile(inspectProfiles(sandboxDir), 'p1');
     assert.equal(r1.profile, 'b');
     assert.equal(r1.ambiguous, undefined);
     // 两个 profile 的 local-plugins 都有 ⇒ 要求显式
     mkdirSync(join(proot, 'a', 'local-plugins', 'p1'), { recursive: true });
-    assert.equal(pickProfile(inspectProfiles(tmp), 'p1').ambiguous, true);
+    assert.equal(pickProfile(inspectProfiles(sandboxDir), 'p1').ambiguous, true);
     // 都只落在 node_modules ⇒ 仍能命中（但理由会提示应迁到 local-plugins）
     rmSync(join(proot, 'a', 'local-plugins', 'p1'), { recursive: true, force: true });
     rmSync(join(proot, 'b', 'local-plugins', 'p1'), { recursive: true, force: true });
     mkdirSync(join(proot, 'a', 'node_modules', 'p2'), { recursive: true });
-    const r2 = pickProfile(inspectProfiles(tmp), 'p2');
+    const r2 = pickProfile(inspectProfiles(sandboxDir), 'p2');
     assert.equal(r2.profile, 'a');
     assert.match(r2.reason, /node_modules|local-plugins/);
     // 完全没装 ⇒ 不命中
-    assert.equal(pickProfile(inspectProfiles(tmp), 'nope').dir, '');
-  } finally { clean(tmp); }
+    assert.equal(pickProfile(inspectProfiles(sandboxDir), 'nope').dir, '');
+  } finally { clean(sandboxDir); }
 });

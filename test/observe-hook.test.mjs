@@ -3,6 +3,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { collectReadPaths, registerObserveHook, DEFAULT_OBSERVE_TOOLS, MAX_FILES_PER_CALL } from '../lib/core/mark-read/hook.js';
 
+/** 样本比上限多出的条数（用于断言结果被截断到上限）。 */
+const SAMPLE_OVERFLOW = 20;
+
 function fakeFsCtx({ throwOnResolve = false } = {}) {
   const emitted = [];
   return {
@@ -30,7 +33,7 @@ test('名单外工具不提取；grep 结构化/文本/参数三路都提', () =
 test('去重 + 上限', () => {
   const dup = { matches: [{ path: '/a/s.js' }, { path: '/a/s.js' }] };
   assert.deepEqual(collectReadPaths('grep', {}, dup), ['/a/s.js']);
-  const many = { matches: Array.from({ length: MAX_FILES_PER_CALL + 20 }, (_, i) => ({ path: `/a/f${i}.js` })) };
+  const many = { matches: Array.from({ length: MAX_FILES_PER_CALL + SAMPLE_OVERFLOW }, (_, i) => ({ path: `/a/f${i}.js` })) };
   assert.equal(collectReadPaths('grep', {}, many).length, MAX_FILES_PER_CALL);
 });
 

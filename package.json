@@ -23,5 +23,23 @@
   "scripts": {
     "test": "node --test test/*.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "author": "EIGHTfs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EIGHTfs/dsh-useful-tools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/EIGHTfs/dsh-useful-tools/issues"
+  },
+  "homepage": "https://github.com/EIGHTfs/dsh-useful-tools#readme",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "mark-read",
+    "plugin-sync",
+    "minihost",
+    "preview",
+    "test-env"
+  ]
 }
