@@ -137,6 +137,22 @@ CIFS 等挂载上 chmod/chown 失败只记录、不中断同步，也不假装�
 
 ---
 
+### C-114 DSH 插件规则两边同源维护，但实现不耦合
+同一套 DSH 插件规则存在两处，判定语义必须一致：
+- `dsh-git-push` 的 `lib/audit-rules/audit-rules-dsh.yml`（提交审计，逐行扫描改动）
+- 本插件 `lib/core/verify-plugin/dsh-rules.mjs`（`verify_plugin`，整仓扫描）
+
+约束：
+① 两个插件**不得互相 import**（各自独立实现，避免耦合与加载顺序问题）；
+② 规则 id / 严重度 / 判定语义必须一致，增删改要两边同步；
+③ 本插件的命中并入 `verify_plugin` 结论：blocker/error → problems，warning → warnings；
+④ 与 `checkClient` 重叠的规则（client 未走 `__ModuleLoader__`）只报一次。
+- 依据：`lib/core/verify-plugin/dsh-rules.mjs` 的 `DSH_RULES`。
+- 验证：`test/dsh-rules.test.mjs` 断言 9 条规则 id 与 git-push 一致，且每条都有正例与关键负例。
+- 违反后果：两份实现漂移会让「审计放行、工具报错」或反之，开发者不知道该信哪个。
+
+---
+
 ## 2. 装配入口（cordis）
 
 ### C-201 入口必须导出 `apply`
@@ -255,7 +271,7 @@ CIFS 等挂载上 chmod/chown 失败只记录、不中断同步，也不假装�
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
-- 依据：`test/` 现有 9 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
+- 依据：`test/` 现有 10 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
 - 入口：`test/run-tests.mjs` 自己扫描 `*.test.mjs` 再把文件列表传给 `node --test`——不依赖 glob
   （Node 20 不支持 `--test` 的 glob，Windows 的 shell 也不展开通配符）。
 - CI：`.github/workflows/test.yml` **固定 `ubuntu-latest`** × Node 20/22/24 跑同一命令（零依赖，无需 npm install）。
@@ -300,6 +316,7 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.25 | 新增 C-114：DSH 插件规则在 dsh-git-push（审计）与本插件（verify_plugin）两边同源维护、实现不耦合；9 条规则并入 verify_plugin 结论。 |
 | 0.1.24 | 新增 C-113：静默失败诊断只做离线组合（不启动宿主），`sync_plugin` 的权限收尾只改权限位、失败只记录；inject 校验 / 激活诊断 / 依赖体检 / HMR 判定并入 verify_plugin。 |
 | 0.1.23 | 新增 C-112：`ui_check` 是静态骨架（不执行代码、`visible` 恒 null、排除 DOM API、`resolved:true` 必须真有节点）。 |
 | 0.1.22 | C-601 CI 矩阵固定 `ubuntu-latest`（去掉 `windows-latest`）：CI 是门禁，环境固定才稳定；跨平台能力由代码保留，Windows 未验证不进门禁。 |
