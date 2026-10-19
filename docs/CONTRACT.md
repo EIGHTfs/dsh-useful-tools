@@ -110,6 +110,20 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ---
 
+### C-112 ui_check 是静态骨架，不是渲染检查
+解析 `lib/client.js` 的 React 元素调用（`createElement` / `h` / `jsx` / `(0, ns.fn)(…)`），产出 HTML 骨架页与 JSON 控件清单。
+必须遵守四条：
+① **不执行代码**（与 C-501 同口径：只读文件、不进浏览器）；
+② 明确区分「静态未知」与「已渲染」：清单里 `visible` 恒为 `null`，留给将来的渲染探针填 true/false；
+③ 排除 DOM API（`document.createElement` 不是 React 节点），且注释里的示例代码不得污染解析结果；
+④ 组件只在文件内定义时才展开；跨文件或工厂函数返回的组件标注「未展开」，不得假装展开成功（`resolved:true` 就必须真有节点）。
+- 依据：`lib/core/ui-check/parse.js`（扫描/配平/插槽/组件定位）、`lib/core/ui-check/emit.js`（清单与 HTML）、`lib/shared/ui_check/index.js`。
+- 验证：`test/ui-check.test.mjs` 覆盖三种调用写法、DOM 排除、注释污染、条件分支收集、组件解构参数、压缩告警、HTML 转义；
+  真实文件实测：dsh-session-conductor 267 个控件 / 5 个插槽全展开，dsh-skill-scoreboard 76 个控件。
+- 违反后果：把它当渲染检查会制造新的误判（静态说有、运行时没有），比不做更糟。
+
+---
+
 ## 2. 装配入口（cordis）
 
 ### C-201 入口必须导出 `apply`
@@ -228,7 +242,7 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
-- 依据：`test/` 现有 7 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
+- 依据：`test/` 现有 8 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
 - 入口：`test/run-tests.mjs` 自己扫描 `*.test.mjs` 再把文件列表传给 `node --test`——不依赖 glob
   （Node 20 不支持 `--test` 的 glob，Windows 的 shell 也不展开通配符）。
 - CI：`.github/workflows/test.yml` **固定 `ubuntu-latest`** × Node 20/22/24 跑同一命令（零依赖，无需 npm install）。
@@ -273,6 +287,7 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.23 | 新增 C-112：`ui_check` 是静态骨架（不执行代码、`visible` 恒 null、排除 DOM API、`resolved:true` 必须真有节点）。 |
 | 0.1.22 | C-601 CI 矩阵固定 `ubuntu-latest`（去掉 `windows-latest`）：CI 是门禁，环境固定才稳定；跨平台能力由代码保留，Windows 未验证不进门禁。 |
 | 0.1.21 | C-110 明确「无内置预置」（定义只来自 quick-commands.json，首次为空表）；C-601 单测入口改为 `test/run-tests.mjs`（自扫文件，不依赖 glob）。 |
 | 0.1.20 | C-110 补 `cwd` 语义（缺省宿主 cwd、必须存在且是目录）与跨平台要求（`bash -c` / `cmd /c`，预置 restart 仅 Linux/macOS）；C-601 单测入口改为 Node 自身展开的 glob、CI 增加 `windows-latest`、明确测试不得依赖 shell 内置命令。 |

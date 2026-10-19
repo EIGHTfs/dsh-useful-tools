@@ -16,6 +16,7 @@
 | `verify_plugin` | `plugin` `source` `profile` `log` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码）。`plugin` 传插件名或根目录，缺省巡检所有已装插件 |
 | `test_env` | `action` `kind` `version` `root` `force` `plugin` `pluginName` `dir` `dshBin` | 测试环境（隔离实例）：`action=create`（创建）/ `start`（启动）/ `stop`（停止）/ `status`（状态）。独立 DSH_HOME + 自动端口，随便崩不碰主实例 |
 | `useful_tools` | `action` `tool` | **本插件工具清单**（动态扫描 `lib/shared`，不维护硬编码列表）：`action=help`（缺省，输出每个工具的名字/说明/参数/示例调用）/ `list`（紧凑清单）；`tool` 可选，只看某一个工具 |
+| `ui_check` | `plugin` `file` `out` `write` `limit` | **UI 静态骨架检查**：解析插件 `lib/client.js` 的 React 元素调用，产出「代码里声明了哪些控件」的 HTML 骨架页 + JSON 清单（插槽注册 / 层级 / className / 内联样式 / 来源行号）。`write:false` 只解析不写盘；缺省输出 `<plugin>/assets/ui-skeleton.html` + 同名 `.json`。**静态解析，不代表运行时渲染结果** |
 
 ## 用法
 
@@ -129,6 +130,34 @@ sync_plugin { write: true, register: true, dshHome: "<环境目录>" }
   `run` 单独传 `cwd` 只对本次执行生效、不改已有定义。
 - 执行走 `bash -c`（Windows `cmd /c`），默认超时 60 秒，stdout/stderr 各截断 20000 字符。
 
+## UI 静态骨架（ui_check）
+
+解析插件的 `lib/client.js`，把「代码里声明了哪些控件」变成可看、可 diff 的产物：
+
+```
+ui_check plugin: "<插件根>"                       # 产出 assets/ui-skeleton.html + .json
+ui_check plugin: "<插件根>" write: false           # 只解析不写盘
+ui_check plugin: "<插件根>" file: "lib/ui.js" out: "/tmp/ui.html"
+```
+
+产物两份：
+
+- `ui-skeleton.html`：插槽注册表 + 结构树 + 静态还原预览 + 控件清单，浏览器打开即看
+- `ui-skeleton.json`：同一份数据的机器可读版本，控件带 `visible: null`——留给将来的渲染探针填 true/false
+
+**它回答什么、不回答什么**（这个边界决定它不能被误用）：
+
+| 问题 | 能否回答 |
+| --- | --- |
+| 代码里声明了哪些控件、层级、className、文本 | ✅ 能，带来源行号 |
+| 哪个插槽注册了、渲染的是哪个组件 | ✅ 能（组件在文件内定义时还会展开该组件的 UI） |
+| 条件分支 / 逻辑与里的元素 | ✅ 能（收进 `conditional` 子树，不漏报） |
+| 运行时到底渲染出来没有（TDZ、条件为 false、hooks 报错、map 空数组） | ❌ 不能 |
+| 真实外观（主题 CSS 变量、宿主布局约束） | ❌ 不能，只能用内联样式近似 |
+
+所以它是**静态骨架，不是渲染检查**：判断「实际渲染出来没有」仍然需要在真实宿主里看。
+将来补渲染探针时，两者共用同一份清单格式（`visible` 字段），可直接 diff 出「声明了但没渲染」的控件。
+
 ## 配置（`<DSH_HOME>/useful-tools/config.json`）
 
 ```json
@@ -217,6 +246,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.23 | 新增 `ui_check` 工具：静态解析插件 `lib/client.js`，产出 HTML 骨架页 + JSON 控件清单（插槽注册、层级、className、内联样式、来源行号；组件在文件内定义时展开）。支持 `createElement` / `h` / `jsx` / `(0, ns.fn)(…)` 四种写法，排除 `document.createElement`，条件与逻辑表达式里的元素一并收集；清单 `visible: null` 为将来的渲染探针预留。 |
 | 0.1.22 | CI 回到固定 `ubuntu-latest` × Node 20/22/24：CI 是门禁，环境固定才稳定；跨平台能力（`cmd /c` 分支、测试不依赖 shell 内置命令）保留在代码里，但 Windows 不挂进每次提交的门禁（其 spawn cwd 与 cmd 引号语义尚未验证，需真实环境单独验证）。 |
 | 0.1.21 | `quick_command` 去掉内置预置：定义完全来自 `<DSH_HOME>/useful-tools/quick-commands.json`，首次是空表（`list` 返回 `count:0` 并提示用 add），`restart` 这类本机命令由使用方自己 add。测试入口改为跨平台 runner `node test/run-tests.mjs`（自扫 `*.test.mjs`，不依赖 Node 20 不支持的 glob 与 Windows 不展开的通配符）。 |
 | 0.1.20 | `quick_command` 支持 `cwd` 执行目录：缺省空 = 宿主进程 cwd，传了先校验「存在且是目录」并解析成绝对路径；`add`/`edit`/`run` 带 `command` 时随定义落盘，`run` 单独传只对本次生效。跨平台加固：单测不再依赖 shell 内置命令（用 node 打印 cwd）、测试文件统一改名 `*.test.mjs` 用 Node 自身展开 glob，CI 矩阵增加 `windows-latest`。 |
