@@ -10,11 +10,11 @@
 |---|---|---|
 | `mark_read` | `commands` `undo` | 配置**读命令集合** + **自动标记钩子**（两者是同一功能）。`commands` 写命令串 / 传文件路径 / 不传用预置清单（`lib/core/mark-read/read-commands.json`）；`undo:true` 撤销。**两种读法都算**：① 宿主工具（如 `grep` 工具）；② `bash` 里跑的命令（`cat a.txt`、`grep x b.txt`）。跨平台别名归一：`Get-Content`/`gc`/`type`/`more` → cat，`Select-String`/`sls`/`findstr` → grep。集合里的命令执行后，钩子（`tools/post-execute`）自动把它读过的**所有文件**补发观测，不用指定文件；配置落盘 `<DSH_HOME>/useful-tools/config.json`、每次现读 ⇒ 配置一次永久有效 |
 | `quick_command` | `action` `name` `command` `cwd` `description` `timeoutMs` | **快捷命令**：执行/管理 `<DSH_HOME>/useful-tools/quick-commands.json` 里定义的命令。`action=run`（缺省，按 `name` 执行；同时传 `command` 会**先持久化再执行**，等效 add 后执行）/ `add` / `edit` / `delete` / `list`（列出所有名字+命令）。`cwd` 指定执行目录（缺省空 = 宿主进程 cwd）。**无内置预置**：定义完全来自该文件，首次是空表；重启 DSH 这类命令由使用方自己 `add` |
-| `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去 |
-| `minihost` | `action` `plugin` `port` `path` `method` `body` `services` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求）；`services` 可注入宿主服务（插件依赖 storageDomain/sessions 等真实服务时用） |
+| `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去。**写盘后自动**：权限/属主对齐（目录 755 / 文件 644，属主对齐 profile）+ 读权限自检 + 依赖体检（`file:` 路径失效会明确报出） |
+| `minihost` | `action` `plugin` `port` `path` `method` `body` `services` `force` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求）；`services` 可注入宿主服务（插件依赖 storageDomain/sessions 等真实服务时用）。内置 `webServer`/`tools`/`storageDomain`/`sessions` 宽容桩；`force:true` 在已有实例时按新参数重启；404 会带原因提示 |
 | `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` `host` `lan` | **前端模拟**：插件预览页。`action=gen`（生成，无 spec 时自动挂载插槽组件）/ `serve`（启动，`backend` 可反代真实后端或 minihost；`host=0.0.0.0` 或 `lan:true` 监听局域网并返回 `lanUrl`）/ `stop` / `status` |
-| `verify_plugin` | `plugin` `source` `profile` `log` | 验证任意 DSH 插件是否装载成功、工具是否注册（只静态分析，不执行插件代码）。`plugin` 传插件名或根目录，缺省巡检所有已装插件 |
-| `test_env` | `action` `kind` `version` `root` `force` `plugin` `pluginName` `dir` `dshBin` | 测试环境（隔离实例）：`action=create`（创建）/ `start`（启动）/ `stop`（停止）/ `status`（状态）。独立 DSH_HOME + 自动端口，随便崩不碰主实例 |
+| `verify_plugin` | `plugin` `source` `profile` `log` `ui` | 验证任意 DSH 插件是否装载成功（**只静态分析，不执行插件代码**）：入口/apply/注册调用/effect 形态 + **inject 服务名校验**（拼错给近似建议）+ **激活诊断**（dependencies / bundles / loader 行 / `did not activate` 归类）+ **依赖解析** + **客户端入口与 UI 骨架**（`controls=0` 直接判失败）+ **HMR 覆盖判定** + 部署一致性 + 宿主日志。`plugin` 传插件名或根目录，缺省巡检所有已装插件 |
+| `test_env` | `action` `kind` `version` `root` `force` `plugin` `pluginName` `dir` `dshBin` | 测试环境（隔离实例）：`action=create`（创建）/ `start`（启动）/ `stop`（停止）/ `status`（状态）。独立 DSH_HOME + 自动端口，随便崩不碰主实例。`dshBin` 可传 shell wrapper（自动解析到真实 `bin.js`）；启动超时会直接带回日志里的关键错误行 |
 | `useful_tools` | `action` `tool` | **本插件工具清单**（动态扫描 `lib/shared`，不维护硬编码列表）：`action=help`（缺省，输出每个工具的名字/说明/参数/示例调用）/ `list`（紧凑清单）；`tool` 可选，只看某一个工具 |
 | `ui_check` | `plugin` `file` `out` `write` `limit` | **UI 静态骨架检查**：解析插件 `lib/client.js` 的 React 元素调用，产出「代码里声明了哪些控件」的 HTML 骨架页 + JSON 清单（插槽注册 / 层级 / className / 内联样式 / 来源行号）。`write:false` 只解析不写盘；缺省输出 `<plugin>/assets/ui-skeleton.html` + 同名 `.json`。**静态解析，不代表运行时渲染结果** |
 
@@ -158,6 +158,21 @@ ui_check plugin: "<插件根>" file: "lib/ui.js" out: "/tmp/ui.html"
 所以它是**静态骨架，不是渲染检查**：判断「实际渲染出来没有」仍然需要在真实宿主里看。
 将来补渲染探针时，两者共用同一份清单格式（`visible` 字段），可直接 diff 出「声明了但没渲染」的控件。
 
+## 静默失败诊断（verify_plugin 的六段）
+
+插件开发里最难查的不是报错，是**不报错**。verify_plugin 把这类问题逐段列出来：
+
+| 症状 | 检查段 | 判定依据 |
+| --- | --- | --- |
+| 装了但不激活、apply 没执行 | `activation` | profile 的 dependencies / `dsh.profile.bundles` / 离线组合出的 loader 行，缺哪项报哪项 |
+| 服务拿不到、路由 404 | `inject` | 声明的服务名与当前 DSH 安装里实际存在的比对（`super(ctx,'x')` / `inject([...])` / `.get('x')`），拼错给近似建议 |
+| import 失败、依赖找不到 | `deps` | 在目标 profile 的 `node_modules` 与 Node 解析里逐个试；`file:` 路径失效单独报 |
+| UI 空白、控件没出来 | `client` + `ui` | 有 `dsh.client` 就必须有 `lib/client.js` 且调用 `__ModuleLoader__.load`；UI 骨架 `controls=0` 或插槽 0 节点直接判失败 |
+| 改了代码没生效 | `hmr` | 读 profile 的 hmr 配置，判断插件路径是否在 watch 范围 |
+| 同步后宿主读不到 | `sync_plugin` 的 `permissions` / `readable` | 写盘后对齐 755/644 与属主，再逐个 `access(R_OK)` |
+
+边界：激活诊断是**离线组合**（profile 的 patch + 各 bundle 的 patch），不启动宿主；运行期真实装配仍以宿主日志为准。
+
 ## 配置（`<DSH_HOME>/useful-tools/config.json`）
 
 ```json
@@ -246,6 +261,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.24 | 按 sub2api 插件开发的实战问题清单增强「静默失败」诊断：`verify_plugin` 新增 inject 服务名校验（拼错给近似建议）、激活诊断（dependencies / bundles / loader 行 / `did not activate` 归类）、依赖解析、客户端入口与 UI 骨架串联、HMR 覆盖判定；`sync_plugin` 写盘后自动对齐权限/属主并做读权限自检 + 依赖体检；`minihost` 内置 storageDomain/sessions 宽容桩、`force` 重启、404 原因提示；`test_env` 支持 shell wrapper 形式的 `dshBin` 并带出超时日志关键行；`ui_check` 增加一行摘要；`useful_tools` help 增加「症状 → 工具」索引。 |
 | 0.1.23 | 新增 `ui_check` 工具：静态解析插件 `lib/client.js`，产出 HTML 骨架页 + JSON 控件清单（插槽注册、层级、className、内联样式、来源行号；组件在文件内定义时展开）。支持 `createElement` / `h` / `jsx` / `(0, ns.fn)(…)` 四种写法，排除 `document.createElement`，条件与逻辑表达式里的元素一并收集；清单 `visible: null` 为将来的渲染探针预留。 |
 | 0.1.22 | CI 回到固定 `ubuntu-latest` × Node 20/22/24：CI 是门禁，环境固定才稳定；跨平台能力（`cmd /c` 分支、测试不依赖 shell 内置命令）保留在代码里，但 Windows 不挂进每次提交的门禁（其 spawn cwd 与 cmd 引号语义尚未验证，需真实环境单独验证）。 |
 | 0.1.21 | `quick_command` 去掉内置预置：定义完全来自 `<DSH_HOME>/useful-tools/quick-commands.json`，首次是空表（`list` 返回 `count:0` 并提示用 add），`restart` 这类本机命令由使用方自己 add。测试入口改为跨平台 runner `node test/run-tests.mjs`（自扫 `*.test.mjs`，不依赖 Node 20 不支持的 glob 与 Windows 不展开的通配符）。 |

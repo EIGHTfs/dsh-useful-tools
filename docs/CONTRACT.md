@@ -124,6 +124,19 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ---
 
+### C-113 静默失败诊断只做离线组合，不启动宿主
+`verify_plugin` 的 inject 校验、激活诊断、依赖体检都是**离线**的：只读 profile 的 `package.json` /
+`cordis.patch.yml` 与各 bundle 的 patch，组合出 loader 行清单；不启动宿主、不 import 被验证插件。
+运行期真实装配以宿主日志（`did not activate` 归类）为准，输出里不得把离线推断写成「运行期实测」。
+
+`sync_plugin` 写盘后的权限/属主对齐与读权限自检属于**副作用收尾**：只改权限位与属主，不改文件内容；
+CIFS 等挂载上 chmod/chown 失败只记录、不中断同步，也不假装成功。
+- 依据：`lib/core/verify-plugin/{inject,activation,deps}.mjs`、`lib/core/plugin-sync/permissions.mjs`。
+- 验证：`test/verify-enhance.test.mjs` 覆盖 inject 近似建议、激活三项缺失、依赖 `file:` 失效、权限对齐、`dshBin` wrapper 解析。
+- 违反后果：把「离线推断」说成「运行期实测」会误导排查方向；权限静默失败会再次变成「装了不激活」。
+
+---
+
 ## 2. 装配入口（cordis）
 
 ### C-201 入口必须导出 `apply`
@@ -242,7 +255,7 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
-- 依据：`test/` 现有 8 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
+- 依据：`test/` 现有 9 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
 - 入口：`test/run-tests.mjs` 自己扫描 `*.test.mjs` 再把文件列表传给 `node --test`——不依赖 glob
   （Node 20 不支持 `--test` 的 glob，Windows 的 shell 也不展开通配符）。
 - CI：`.github/workflows/test.yml` **固定 `ubuntu-latest`** × Node 20/22/24 跑同一命令（零依赖，无需 npm install）。
@@ -287,6 +300,7 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.24 | 新增 C-113：静默失败诊断只做离线组合（不启动宿主），`sync_plugin` 的权限收尾只改权限位、失败只记录；inject 校验 / 激活诊断 / 依赖体检 / HMR 判定并入 verify_plugin。 |
 | 0.1.23 | 新增 C-112：`ui_check` 是静态骨架（不执行代码、`visible` 恒 null、排除 DOM API、`resolved:true` 必须真有节点）。 |
 | 0.1.22 | C-601 CI 矩阵固定 `ubuntu-latest`（去掉 `windows-latest`）：CI 是门禁，环境固定才稳定；跨平台能力由代码保留，Windows 未验证不进门禁。 |
 | 0.1.21 | C-110 明确「无内置预置」（定义只来自 quick-commands.json，首次为空表）；C-601 单测入口改为 `test/run-tests.mjs`（自扫文件，不依赖 glob）。 |
