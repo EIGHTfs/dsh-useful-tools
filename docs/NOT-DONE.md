@@ -78,8 +78,26 @@
 
 ---
 
+## 4. spec 多挂载点 mounts[]
+
+**想要什么**：一个预览页同时渲染多个插槽（如 `settings.section` + `settings.plugin.item`），
+每项可带自己的 props，便于多槽插件一次看完。
+
+**现状**：`preview gen` 只挂一个组件（按优先级挑 `settings.section` > `settings.plugin.item` > `sidebar`）。
+单槽插件够用；多槽插件目前只能分多次生成。
+
+**为什么暂缓**：要改 gen 的挂载模型（每个 mount 一个容器 + 各自 props 注入 + 布局），
+而当前实践里（dsh-session-migrate、dsh-skill-scoreboard 等）都只有一个主槽；
+等真有多槽需求再做，避免为未出现的场景增加挂载复杂度。
+
+**若做**：spec 增加 `mounts: [{ slot, props, title }]`，gen 为每项生成一个 `<section data-slot>`，
+`post` 阶段逐个 `createRoot().render()`；返回里给每个 mount 的渲染状态（是否捕获到组件）。
+
+---
+
 ## 修改记录
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.26 | 新增第 4 项：spec 多挂载点 `mounts[]`（当前单槽够用，暂缓）。 |
 | 0.1.5 | 首版：记录截图、自包含快照、shell 启动器三项的评估结论与不做原因。 |

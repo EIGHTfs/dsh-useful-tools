@@ -40,8 +40,9 @@
 `preview` 负责**前端模拟**（页面渲染自检），`minihost` 负责**后端模拟**（插件服务端 handler）；
 两者通过 `preview serve` 的 `backend` 串起来：前端页面的 `/api/*` 打到 minihost，即完成不碰真实后端的联调。
 - 依据：`lib/core/preview/server.js` 的 backend 反代；`lib/core/minihost/host.mjs` 的插件 handler 加载。
-- 验证：`minihost start` 后把 `preview serve` 的 `backend` 指向该端口，页面 `/api/*` 应返回 minihost 的响应。
-- 违反后果：两个工具各自能跑但串不起来，模拟链路断在前端或后端。
+- 验证：`minihost start` 后把 `preview serve` 的 `backend` 指向该端口，页面 `/api/*` 应返回 minihost 的响应；
+  **省略 `backend` 时**自动沿用台账里最近一次存活的 minihost 实例，并在结果里给出 `backendSource`（如 `minihost:31178`）。
+- 违反后果：两个工具各自能跑但串不起来，模拟链路断在前端或后端；自动沿用若不给来源，会静默连错实例。
 
 ### C-106 预览页无 spec 兜底（通用自动挂载）
 `preview gen` 在插件没有 `assets/preview.spec.mjs` 时用**通用自动挂载垫片**生成页面：
@@ -67,8 +68,11 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 插件依赖真实宿主服务（`storageDomain` / `sessions` 等）时，用 `services` 参数指向一个模块
 （默认导出服务对象，或返回服务对象的函数），注入项覆盖同名默认服务，核心服务（`webServer` / `tools`）仍由 minihost 提供。
 - 依据：`lib/core/minihost/host-child.mjs` 的 pathname 匹配与 `DSH_MINIHOST_SERVICES` 注入；`host.mjs` 的 `--services`。
-- 验证：`/api/x?y=1` 与 `/api/x` 返回同一状态码；注入 storageDomain 后 `/templates` 由 500 变 200。
-- 违反后果：带参数的接口全部 404；依赖宿主服务的插件在 minihost 里只能跑出 500。
+- 环境隔离：`minihost start` 默认把子进程的 `DSH_HOME` 指到 `.minihost/home-<port>`（不写真实会话/附件库），
+  并用 `--deps <真实 profile>/node_modules` 补回依赖解析；需要贴近真实环境时用 `env: { DSH_HOME: "<真实 .dsh>" }` 覆盖。
+- 验证：`/api/x?y=1` 与 `/api/x` 返回同一状态码；注入 storageDomain 后 `/templates` 由 500 变 200；
+  默认启动后 `home` 指向 `.minihost/home-<port>`，且插件路由仍能注册（依赖解析正常）。
+- 违反后果：带参数的接口全部 404；依赖宿主服务的插件在 minihost 里只能跑出 500；不隔离 home 会让自测写脏真实数据。
 
 ### C-109 mark_read 是「读命令集合」配置，不是文件标记
 `mark_read` 只有两个参数：`commands`（读命令集合，可直接写、可传文件路径从文件读、不传用预置清单
@@ -316,6 +320,7 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.26 | C-105 补「backend 可省略、自动沿用最近 minihost 实例并给 backendSource」；C-108 补默认隔离 `DSH_HOME` 与 `--deps` 补依赖解析。 |
 | 0.1.25 | 新增 C-114：DSH 插件规则在 dsh-git-push（审计）与本插件（verify_plugin）两边同源维护、实现不耦合；9 条规则并入 verify_plugin 结论。 |
 | 0.1.24 | 新增 C-113：静默失败诊断只做离线组合（不启动宿主），`sync_plugin` 的权限收尾只改权限位、失败只记录；inject 校验 / 激活诊断 / 依赖体检 / HMR 判定并入 verify_plugin。 |
 | 0.1.23 | 新增 C-112：`ui_check` 是静态骨架（不执行代码、`visible` 恒 null、排除 DOM API、`resolved:true` 必须真有节点）。 |
