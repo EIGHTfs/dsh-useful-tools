@@ -9,6 +9,7 @@
 | 工具 | 参数 | 简介 |
 |---|---|---|
 | `mark_read` | `commands` `undo` | 配置**读命令集合** + **自动标记钩子**（两者是同一功能）。`commands` 写命令串 / 传文件路径 / 不传用预置清单（`lib/core/mark-read/read-commands.json`）；`undo:true` 撤销。**两种读法都算**：① 宿主工具（如 `grep` 工具）；② `bash` 里跑的命令（`cat a.txt`、`grep x b.txt`）。跨平台别名归一：`Get-Content`/`gc`/`type`/`more` → cat，`Select-String`/`sls`/`findstr` → grep。集合里的命令执行后，钩子（`tools/post-execute`）自动把它读过的**所有文件**补发观测，不用指定文件；配置落盘 `<DSH_HOME>/useful-tools/config.json`、每次现读 ⇒ 配置一次永久有效 |
+| `mark_edit` | `paths` `undo` | **编辑后标记**（`mark_read` 的另一半）：把「我刚改过这些文件」按**当前磁盘版本**补发给宿主（官方同一条 `fs/observed` 通道 + `fs.stat()` 现取 version），补完 `write`/`edit` 不必重读全文。专治「文件被 bash（`sed -i` / heredoc 重定向 / `tee`）或别的工具改过 ⇒ `file changed since it was read`」。`paths` 逗号/分号/换行分隔，或 `@清单文件`；`undo:true` 撤销标记（补发不可能对上的版本，重新要求先读）。**不读文件内容**，只声明「这份现在是什么」——只在自己确实经手写入时用 |
 | `quick_command` | `action` `name` `command` `cwd` `description` `timeoutMs` | **快捷命令**：执行/管理 `<DSH_HOME>/useful-tools/quick-commands.json` 里定义的命令。`action=run`（缺省，按 `name` 执行；同时传 `command` 会**先持久化再执行**，等效 add 后执行）/ `add` / `edit` / `delete` / `list`（列出所有名字+命令）。`cwd` 指定执行目录（缺省空 = 宿主进程 cwd）。**无内置预置**：定义完全来自该文件，首次是空表；重启 DSH 这类命令由使用方自己 `add` |
 | `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去。**写盘后自动**：权限/属主对齐（目录 755 / 文件 644，属主对齐 profile）+ 读权限自检 + 依赖体检（`file:` 路径失效会明确报出） |
 | `patch_cifs_write` | `action` `dryRun` `file` `packageRoot` `probeDir` | **给官方写/编辑工具打 CIFS 补丁**：CIFS/SMB 不实现 POSIX chmod，官方写入实现 `writeFileAtomic()` 在「chmod 临时目录」这步就抛 `EPERM`，导致 `write`/`edit` 在挂载盘上一次都写不进去（目录其实是可写的，极易误判成权限问题）。本工具把三处 chmod 包成「尽力而为」：只吞 EPERM/ENOTSUP/EOPNOTSUPP，其它错误照常抛，**rename 与原子性完全不动**。`action=check`（缺省，只读检测：定位文件 / 是否已打 / chmod 是否真不可用）/ `apply`（备份 → 替换 → `node --check` 校验；`dryRun` **缺省 true**，要真改传 `false`）/ `revert`（还原备份）。打完**必须重启 DSH** 才生效；DSH 升级会覆盖补丁，升级后重跑 `apply` |
@@ -130,6 +131,31 @@ sync_plugin { write: true, register: true, dshHome: "<环境目录>" }
   传了会校验「存在且是目录」，并解析成绝对路径。`add`/`edit`/`run` 带 `command` 时随定义落盘，
   `run` 单独传 `cwd` 只对本次执行生效、不改已有定义。
 - 执行走 `bash -c`（Windows `cmd /c`），默认超时 60 秒，stdout/stderr 各截断 20000 字符。
+
+## 编辑前为什么会被要求重读（`mark_read` / `mark_edit`）
+
+宿主的 `write` / `edit` 有一道门禁：**改之前必须读过**。台账在 `fs-observation-policy` 里，
+按 `actor.agent.session` 记账，每项记录 `targetKey → { kind, version }`；写入时用 CAS 比对
+`version`，对不上就报 `file changed since it was read`，要求先读。
+
+关键事实（实测）：**官方 `write` / `edit` 成功后自己会补发观测**（`tool-fs` 的 `mutationResult()`
+发 `fs/observed` + 新 version），所以「自己写完、自己接着改」本来**不需要**重读。
+
+真正会逼人重读的只有一种：文件被 **fs 工具之外**的途径改动过——bash 的 `sed -i` / heredoc 重定向 /
+`tee`、别的工具或别的会话写入、git 检出等。version 变了，旧观测作废。这是防盲改的设计，不是 bug。
+
+本插件用官方同一条通道（`fs/observed` + `fs.stat()` 现取 version）补上这个缺口：
+
+| 工具 | 补的是什么 | 用法 |
+| --- | --- | --- |
+| `mark_read` | **读**过的文件（自动） | 配好读命令集合（缺省 `grep`、`cat`），集合里的命令执行后，它读过的文件自动补发观测 |
+| `mark_edit` | **写**过的文件（显式） | `mark_edit { paths: "a.js,b.js" }`：按当前磁盘版本补发观测，之后 `edit` 直接可改；`undo:true` 撤回去、恢复「先读再改」 |
+
+实测：bash 改写文件后，`cat` 一次（`cat` 在集合里）即补发观测，紧接着 `edit` 直接成功、无需重读；
+不 `cat` 直接 `edit` 则报 stale。
+
+边界：`mark_edit` **不读文件内容**，它声明的是「我已经知道这份文件现在是什么」。
+内容不是自己写的文件，仍应老实 `read`——否则等于自己拆掉门禁。
 
 ## UI 静态骨架（ui_check）
 
@@ -312,6 +338,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.28 | 新增 `mark_edit` 工具（`mark_read` 的另一半）：把「我刚改过这些文件」按当前磁盘版本经官方 `fs/observed` 通道补发观测，`write`/`edit` 不必重读全文；`undo` 用哨兵版本恢复「先读再改」门禁。补的是官方补不到的缺口——bash `sed -i` / heredoc 重定向 / `tee`、别的工具或会话写入导致的 `file changed since it was read`。 |
 | 0.1.27 | 修 `verify_plugin` 的 DSH 规则自指误报：匹配前先把**注释与字符串内容**遮蔽成等长空格（行号不变），只对「真实代码」匹配，规则 `message` 文案里写出违规写法（如「用 addRoute \|\| route 兜底」）不再触发自己；需要字符串内容的模块名类规则改为「遮蔽视图确认 import/require 结构 → 回原文核对模块名」；并跳过规则定义文件本身。补齐 `patch_cifs_write` 的文档（工具表 + 「CIFS 挂载下报 EPERM」章节；工具本身随 0.1.26 提交，README 当时漏记）。 |
 | 0.1.26 | 按 dsh-session-migrate 的实战反馈改 5 处：`preview gen` 说明写明 `preview.spec.mjs` 可选、产物在插件内且未忽略时提示入库风险、页面顶部内置错误面板（运行期错误可见）；`preview serve` 的 `backend` 可省略（自动沿用最近一次 minihost 实例并返回 `backendSource`）；`minihost start` 新增 `env` 参数且**默认隔离 `DSH_HOME`**（写到 `.minihost/home-<port>`，依赖解析用 `--deps` 补回真实 profile）。多挂载点 `mounts[]` 记入 NOT-DONE 待办。 |
 | 0.1.25 | 把 dsh-git-push 的 9 条 DSH 插件规则移植到 `verify_plugin`（独立实现，两个插件不互相 import）：裸名 cordis/schemastery、render 空实现、client 引 Node 内置、凭据字段缺 `role('secret')`、patch insert id 冲突、client 未走 `__ModuleLoader__`、ctx 未注入属性（blocker）、猜宿主 API 兜底链。另修激活诊断的 profile 选择：显式指定 > web > 第一个（原先取 `profiles[0]` 会误判到历史 profile）。 |

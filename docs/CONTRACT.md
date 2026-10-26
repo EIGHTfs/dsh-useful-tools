@@ -179,6 +179,28 @@ CIFS/SMB 不实现 POSIX chmod，官方 `writeFileAtomic()` 在「chmod 临时�
 
 ---
 
+### C-116 `mark_edit` 只补发观测，不改宿主、不读内容
+宿主的 `write` / `edit` 门禁由 `fs-observation-policy` 管：按 `actor.agent.session` 记账，
+每项 `targetKey → { kind, version }`，写入走 CAS。官方 `write`/`edit` 成功后**自己会**补发
+`fs/observed`（`tool-fs` 的 `mutationResult()`），所以「自己写完自己再改」不需重读；
+只剩「文件被 fs 工具之外的途径改动」这一种会逼人重读（version 变了、旧观测作废）。
+
+`mark_edit` 补的就是这一种，四条约束：
+① **只走官方通道**：`ctx.emit('fs/observed', target, { kind:'present', version }, exec)`，
+   `version` 由 `fs.stat()` 现取；不修改宿主、不碰私有接口、不动 `fs-observation-policy`；
+② **actor 必须是本次调用的 `exec`**——台账按 owner 隔离，拿错 actor 等于替别人记账；
+③ **不读文件内容**：它声明的是「这份现在是什么」，因此只在自己确实经手写入时用；
+   内容不是自己写的文件仍应 `read`（否则等于自己拆掉门禁）；
+④ `undo` 用**哨兵 version**（与真实版本必然不等）让 CAS 判 stale ⇒ 重新要求先读，即恢复门禁。
+- 依据：`lib/core/mark-edit/index.js`（`parsePaths` / `runMarkEdit` / `STALE_SENTINEL`），
+  补发 recipe 复用 `lib/core/mark-read/observe.js` 的 `observeFileForHost`。
+- 验证：`test/mark-edit.test.mjs`（入参解析、present+version 补发、actor 透传、undo 哨兵、
+  坏路径隔离、上限截断）；真实链路实测：bash 改写文件 → `cat`（在 `mark_read` 集合里）补发观测 → `edit` 直接成功。
+- 违反后果：绕过官方通道改宿主会在升级后失效；不读内容却标「已读」会诱发盲改；
+  undo 不用哨兵则无法恢复门禁。
+
+---
+
 ## 2. 装配入口（cordis）
 
 ### C-201 入口必须导出 `apply`
@@ -297,7 +319,7 @@ CIFS/SMB 不实现 POSIX chmod，官方 `writeFileAtomic()` 在「chmod 临时�
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
-- 依据：`test/` 现有 10 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
+- 依据：`test/` 现有 11 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
 - 入口：`test/run-tests.mjs` 自己扫描 `*.test.mjs` 再把文件列表传给 `node --test`——不依赖 glob
   （Node 20 不支持 `--test` 的 glob，Windows 的 shell 也不展开通配符）。
 - CI：`.github/workflows/test.yml` **固定 `ubuntu-latest`** × Node 20/22/24 跑同一命令（零依赖，无需 npm install）。
@@ -342,6 +364,7 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.28 | 新增 C-116：`mark_edit` 只补发观测（官方 `fs/observed` 通道、actor 用本次 exec、不读内容、undo 用哨兵版本恢复门禁）。 |
 | 0.1.27 | 新增 C-115：`patch_cifs_write` 只降级权限收紧、不动原子性（只吞 EPERM/ENOTSUP/EOPNOTSUPP）；C-114 补 ⑤⑥：规则匹配只针对真实代码（遮蔽注释与字符串内容）。 |
 | 0.1.26 | C-105 补「backend 可省略、自动沿用最近 minihost 实例并给 backendSource」；C-108 补默认隔离 `DSH_HOME` 与 `--deps` 补依赖解析。 |
 | 0.1.25 | 新增 C-114：DSH 插件规则在 dsh-git-push（审计）与本插件（verify_plugin）两边同源维护、实现不耦合；9 条规则并入 verify_plugin 结论。 |
