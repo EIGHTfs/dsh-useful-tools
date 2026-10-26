@@ -181,21 +181,31 @@ CIFS/SMB 不实现 POSIX chmod，官方 `writeFileAtomic()` 在「chmod 临时�
 
 ### C-116 `mark_edit` 只补发观测，不改宿主、不读内容
 宿主的 `write` / `edit` 门禁由 `fs-observation-policy` 管：按 `actor.agent.session` 记账，
-每项 `targetKey → { kind, version }`，写入走 CAS。官方 `write`/`edit` 成功后**自己会**补发
-`fs/observed`（`tool-fs` 的 `mutationResult()`），所以「自己写完自己再改」不需重读；
-只剩「文件被 fs 工具之外的途径改动」这一种会逼人重读（version 变了、旧观测作废）。
+每项 `targetKey → { kind, version }`，写入走 CAS。而 `version` 是
+`dev:ino:size:mtimeNs:ctimeNs`，其中时间戳在 CIFS/SMB 上会**晚到**——
+实测写完后 3ms 内 `mtime/ctime` 还会再变一次（内容未变）。官方在 `rename` 后**立刻** probe 取版本
+并补发观测，于是记下的是稳定前的值：下一次写改 CAS 对不上 ⇒ 报 `file changed since it was read`。
+所以需要补的不只是「fs 工具之外的改动」，**连续编辑**同样中招（实测 CIFS：`write → edit ✓ → edit ✗`；
+本地盘 `/tmp` 连编 3 次全过）。
 
-`mark_edit` 补的就是这一种，四条约束：
+`mark_edit` 补的正是这个缺口，五条约束：
 ① **只走官方通道**：`ctx.emit('fs/observed', target, { kind:'present', version }, exec)`，
    `version` 由 `fs.stat()` 现取；不修改宿主、不碰私有接口、不动 `fs-observation-policy`；
 ② **actor 必须是本次调用的 `exec`**——台账按 owner 隔离，拿错 actor 等于替别人记账；
 ③ **不读文件内容**：它声明的是「这份现在是什么」，因此只在自己确实经手写入时用；
    内容不是自己写的文件仍应 `read`（否则等于自己拆掉门禁）；
-④ `undo` 用**哨兵 version**（与真实版本必然不等）让 CAS 判 stale ⇒ 重新要求先读，即恢复门禁。
-- 依据：`lib/core/mark-edit/index.js`（`parsePaths` / `runMarkEdit` / `STALE_SENTINEL`），
+④ `undo` 用**哨兵 version**（与真实版本必然不等）让 CAS 判 stale ⇒ 重新要求先读，即恢复门禁；
+⑤ **清单落盘 + 自动续期**：标记过的绝对路径写进 `config.json` 的 `editPaths`（跨重启有效，
+   与 mark_read 的键共存、互不覆盖）；这些路径每次被 `write`/`edit` 改动后，钩子延迟
+   `settleMs`（缺省 150ms）重新 probe 并补发**稳定版本**，使「标记一次」变成「长期有效」。
+   续期只作用于清单内路径——没标记的文件完全不受影响，因此不是放开宿主门禁。
+- 依据：`lib/core/mark-edit/index.js`（`parsePaths` / `runMarkEdit` / `STALE_SENTINEL`）、
+  `lib/core/mark-edit/store.js`（`editPaths` 持久清单）、`lib/core/mark-edit/hook.js`（续期钩子），
   补发 recipe 复用 `lib/core/mark-read/observe.js` 的 `observeFileForHost`。
-- 验证：`test/mark-edit.test.mjs`（入参解析、present+version 补发、actor 透传、undo 哨兵、
-  坏路径隔离、上限截断）；真实链路实测：bash 改写文件 → `cat`（在 `mark_read` 集合里）补发观测 → `edit` 直接成功。
+- 验证：`test/mark-edit.test.mjs` 13 例（入参解析、present+version 补发、actor 透传、undo 哨兵、
+  不传 paths 续期、`settleMs` 取稳定值、坏路径隔离、上限截断、落盘保留其它键、
+  续期钩子只碰标记路径）；真实链路实测：CIFS 上 `write → edit ✓ → edit ✗`（版本晚到所致），
+  等时间戳稳定后补发观测即恢复可编辑。
 - 违反后果：绕过官方通道改宿主会在升级后失效；不读内容却标「已读」会诱发盲改；
   undo 不用哨兵则无法恢复门禁。
 
@@ -364,6 +374,7 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.29 | C-116 补 ⑤：清单落盘 + 自动续期（只对 `editPaths` 内路径、延迟 settle 取稳定版本）；补根因说明（version 含 mtimeNs/ctimeNs，CIFS 时间戳晚到）。 |
 | 0.1.28 | 新增 C-116：`mark_edit` 只补发观测（官方 `fs/observed` 通道、actor 用本次 exec、不读内容、undo 用哨兵版本恢复门禁）。 |
 | 0.1.27 | 新增 C-115：`patch_cifs_write` 只降级权限收紧、不动原子性（只吞 EPERM/ENOTSUP/EOPNOTSUPP）；C-114 补 ⑤⑥：规则匹配只针对真实代码（遮蔽注释与字符串内容）。 |
 | 0.1.26 | C-105 补「backend 可省略、自动沿用最近 minihost 实例并给 backendSource」；C-108 补默认隔离 `DSH_HOME` 与 `--deps` 补依赖解析。 |

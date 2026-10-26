@@ -9,7 +9,7 @@
 | 工具 | 参数 | 简介 |
 |---|---|---|
 | `mark_read` | `commands` `undo` | 配置**读命令集合** + **自动标记钩子**（两者是同一功能）。`commands` 写命令串 / 传文件路径 / 不传用预置清单（`lib/core/mark-read/read-commands.json`）；`undo:true` 撤销。**两种读法都算**：① 宿主工具（如 `grep` 工具）；② `bash` 里跑的命令（`cat a.txt`、`grep x b.txt`）。跨平台别名归一：`Get-Content`/`gc`/`type`/`more` → cat，`Select-String`/`sls`/`findstr` → grep。集合里的命令执行后，钩子（`tools/post-execute`）自动把它读过的**所有文件**补发观测，不用指定文件；配置落盘 `<DSH_HOME>/useful-tools/config.json`、每次现读 ⇒ 配置一次永久有效 |
-| `mark_edit` | `paths` `undo` | **编辑后标记**（`mark_read` 的另一半）：把「我刚改过这些文件」按**当前磁盘版本**补发给宿主（官方同一条 `fs/observed` 通道 + `fs.stat()` 现取 version），补完 `write`/`edit` 不必重读全文。专治「文件被 bash（`sed -i` / heredoc 重定向 / `tee`）或别的工具改过 ⇒ `file changed since it was read`」。`paths` 逗号/分号/换行分隔，或 `@清单文件`；`undo:true` 撤销标记（补发不可能对上的版本，重新要求先读）。**不读文件内容**，只声明「这份现在是什么」——只在自己确实经手写入时用 |
+| `mark_edit` | `paths` `undo` `settleMs` | **编辑后标记**（`mark_read` 的另一半，同样**落盘持久、可撤销**）：把「我刚改过这些文件」按**当前磁盘版本**补发给宿主（官方同一条 `fs/observed` 通道 + `fs.stat()` 现取 version），之后 `write`/`edit` 不必重读全文。**清单落盘**（`config.json` 的 `editPaths`，跨重启有效）；**不传 `paths` = 用清单续期**（对应 `mark_read` 不传 `commands` 用预置清单）。标记过的路径在每次被 `write`/`edit` 改动后**自动续期**（延迟 150ms 等时间戳写稳再补发一次），因此连续编辑也无需重读。`settleMs` 可选延迟毫秒（等 CIFS 时间戳写稳，上限 2000）；`undo:true` 撤销（从清单移除 + 补发对不上的版本，重新要求先读）。**不读文件内容**——只在自己确实经手写入时用 |
 | `quick_command` | `action` `name` `command` `cwd` `description` `timeoutMs` | **快捷命令**：执行/管理 `<DSH_HOME>/useful-tools/quick-commands.json` 里定义的命令。`action=run`（缺省，按 `name` 执行；同时传 `command` 会**先持久化再执行**，等效 add 后执行）/ `add` / `edit` / `delete` / `list`（列出所有名字+命令）。`cwd` 指定执行目录（缺省空 = 宿主进程 cwd）。**无内置预置**：定义完全来自该文件，首次是空表；重启 DSH 这类命令由使用方自己 `add` |
 | `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去。**写盘后自动**：权限/属主对齐（目录 755 / 文件 644，属主对齐 profile）+ 读权限自检 + 依赖体检（`file:` 路径失效会明确报出） |
 | `patch_cifs_write` | `action` `dryRun` `file` `packageRoot` `probeDir` | **给官方写/编辑工具打 CIFS 补丁**：CIFS/SMB 不实现 POSIX chmod，官方写入实现 `writeFileAtomic()` 在「chmod 临时目录」这步就抛 `EPERM`，导致 `write`/`edit` 在挂载盘上一次都写不进去（目录其实是可写的，极易误判成权限问题）。本工具把三处 chmod 包成「尽力而为」：只吞 EPERM/ENOTSUP/EOPNOTSUPP，其它错误照常抛，**rename 与原子性完全不动**。`action=check`（缺省，只读检测：定位文件 / 是否已打 / chmod 是否真不可用）/ `apply`（备份 → 替换 → `node --check` 校验；`dryRun` **缺省 true**，要真改传 `false`）/ `revert`（还原备份）。打完**必须重启 DSH** 才生效；DSH 升级会覆盖补丁，升级后重跑 `apply` |
@@ -138,24 +138,30 @@ sync_plugin { write: true, register: true, dshHome: "<环境目录>" }
 按 `actor.agent.session` 记账，每项记录 `targetKey → { kind, version }`；写入时用 CAS 比对
 `version`，对不上就报 `file changed since it was read`，要求先读。
 
-关键事实（实测）：**官方 `write` / `edit` 成功后自己会补发观测**（`tool-fs` 的 `mutationResult()`
-发 `fs/observed` + 新 version），所以「自己写完、自己接着改」本来**不需要**重读。
+而 `version` 的构成是 `dev:ino:size:mtimeNs:ctimeNs`。这里有个实测出来的坑：
 
-真正会逼人重读的只有一种：文件被 **fs 工具之外**的途径改动过——bash 的 `sed -i` / heredoc 重定向 /
-`tee`、别的工具或别的会话写入、git 检出等。version 变了，旧观测作废。这是防盲改的设计，不是 bug。
+> CIFS/SMB 上 **mtime/ctime 会「晚到」**——文件写完之后时间戳还会再变一次（实测 3ms 内：
+> `mtime …223135 → …226020`，`ctime …224135 → …226020`，内容未变）。
+> 官方 `write`/`edit` 成功后是在 `rename` 之后**立刻** probe 拿版本、再补发观测的，
+> 于是它记下的是**稳定前**的值；等到下一次写改时磁盘上已是稳定值 ⇒ CAS 对不上 ⇒ 报 stale。
 
-本插件用官方同一条通道（`fs/observed` + `fs.stat()` 现取 version）补上这个缺口：
+所以这**不只是**「bash 改过」的问题，同样是**连续编辑**的问题（实测：CIFS 上
+`write → edit ✓ → edit ✗`；同一流程在本地盘 `/tmp` 上连编 3 次全过）。重读之所以管用，
+是因为 `read` 在时间戳稳定之后才 probe。
+
+本插件用官方同一条通道（`fs/observed` + `fs.stat()` 现取 version）把这个缺口补上：
 
 | 工具 | 补的是什么 | 用法 |
 | --- | --- | --- |
 | `mark_read` | **读**过的文件（自动） | 配好读命令集合（缺省 `grep`、`cat`），集合里的命令执行后，它读过的文件自动补发观测 |
-| `mark_edit` | **写**过的文件（显式） | `mark_edit { paths: "a.js,b.js" }`：按当前磁盘版本补发观测，之后 `edit` 直接可改；`undo:true` 撤回去、恢复「先读再改」 |
+| `mark_edit` | **写**过的文件（显式，落盘可撤销） | `mark_edit { paths: "a.js,b.js" }`：按当前磁盘版本补发观测并写入持久清单；之后每次被 `write`/`edit` 改动，钩子会**延迟 150ms 自动续期**（取稳定值），所以连续编辑也不用重读；`undo:true` 撤销、恢复「先读再改」 |
 
-实测：bash 改写文件后，`cat` 一次（`cat` 在集合里）即补发观测，紧接着 `edit` 直接成功、无需重读；
-不 `cat` 直接 `edit` 则报 stale。
+实测（CIFS 工作区）：bash 改写文件后 `cat` 一次（`cat` 在集合里）即可编辑；但只标记/只 `cat`
+**一次只够一次编辑**——第二次编辑又会 stale，这正是「自动续期」存在的理由。
 
 边界：`mark_edit` **不读文件内容**，它声明的是「我已经知道这份文件现在是什么」。
-内容不是自己写的文件，仍应老实 `read`——否则等于自己拆掉门禁。
+内容不是自己写的文件，仍应老实 `read`——否则等于自己拆掉门禁。续期钩子只作用于
+**你自己标记过的路径**，没标记的文件完全不受影响。
 
 ## UI 静态骨架（ui_check）
 
@@ -338,6 +344,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.29 | `mark_edit` 补齐「永久有效」语义：清单落盘（`config.json` 的 `editPaths`）、不传 `paths` 用清单续期、`undo` 撤销；新增**自动续期钩子**——标记过的路径每次被 `write`/`edit` 改动后，延迟 `settleMs`（缺省 150ms）重新取版本并补发，解决「标记一次只够一次编辑」；文档更正根因：版本串含 `mtimeNs`/`ctimeNs`，CIFS 时间戳晚到导致连续编辑也判 stale（与 `patch_cifs_write` 无关）。 |
 | 0.1.28 | 新增 `mark_edit` 工具（`mark_read` 的另一半）：把「我刚改过这些文件」按当前磁盘版本经官方 `fs/observed` 通道补发观测，`write`/`edit` 不必重读全文；`undo` 用哨兵版本恢复「先读再改」门禁。补的是官方补不到的缺口——bash `sed -i` / heredoc 重定向 / `tee`、别的工具或会话写入导致的 `file changed since it was read`。 |
 | 0.1.27 | 修 `verify_plugin` 的 DSH 规则自指误报：匹配前先把**注释与字符串内容**遮蔽成等长空格（行号不变），只对「真实代码」匹配，规则 `message` 文案里写出违规写法（如「用 addRoute \|\| route 兜底」）不再触发自己；需要字符串内容的模块名类规则改为「遮蔽视图确认 import/require 结构 → 回原文核对模块名」；并跳过规则定义文件本身。补齐 `patch_cifs_write` 的文档（工具表 + 「CIFS 挂载下报 EPERM」章节；工具本身随 0.1.26 提交，README 当时漏记）。 |
 | 0.1.26 | 按 dsh-session-migrate 的实战反馈改 5 处：`preview gen` 说明写明 `preview.spec.mjs` 可选、产物在插件内且未忽略时提示入库风险、页面顶部内置错误面板（运行期错误可见）；`preview serve` 的 `backend` 可省略（自动沿用最近一次 minihost 实例并返回 `backendSource`）；`minihost start` 新增 `env` 参数且**默认隔离 `DSH_HOME`**（写到 `.minihost/home-<port>`，依赖解析用 `--deps` 补回真实 profile）。多挂载点 `mounts[]` 记入 NOT-DONE 待办。 |
