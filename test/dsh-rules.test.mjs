@@ -174,3 +174,81 @@ test('isClientFile：native-host 不算浏览器侧', () => {
   assert.equal(isClientFile('crx/native-host/host.js'), false);
   assert.equal(isClientFile('lib/server.js'), false);
 });
+
+// ── 自指误报回归（规则不能命中自己的说明文案）──────────────────────────
+
+test('规则说明字符串里的违规写法不产生 finding（自指误报回归）', () => {
+  const dir = makePlugin({
+    'lib/rules-meta.js': [
+      // 真实形态：规则表里的 message 文案，写出违规写法以便说明规则
+      "const rule = {",
+      "  id: 'dsh/host-api-guessed-fallback-chain',",
+      "  message: '用 addRoute || route || use 这类猜测 API 兜底，真实 API 不匹配时静默 return',",
+      "  other: '禁止 require(\"fs\") 与 import x from \"cordis\" 这类写法',",
+      '}',
+    ].join('\n'),
+  });
+  try {
+    const rules = checkDshRules({ root: dir }).hits.map((h) => h.rule);
+    assert.deepEqual(rules, [], `字符串字面量里的写法不是代码，不应产生 finding：${rules.join(', ')}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('注释里写违规写法不产生 finding（行内注释也算）', () => {
+  const dir = makePlugin({
+    'lib/routes.js': [
+      '// 反例：webServer.addRoute || webServer.route 会静默失败',
+      'const ok = webServer.register({ kind: "prefix", path: "/x", handler }) /* ctx.sessionId 也不能读 */',
+    ].join('\n'),
+  });
+  try {
+    const rules = checkDshRules({ root: dir }).hits.map((h) => h.rule);
+    assert.deepEqual(rules, [], `注释不是代码：${rules.join(', ')}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('反向验证：真实代码里的同一写法仍然报错（不是把规则关掉）', () => {
+  const dir = makePlugin({
+    'lib/routes.js': [
+      'const r = srv.addRoute || srv.route',
+      'function f(ctx) { return ctx.sessionId }',
+    ].join('\n'),
+  });
+  try {
+    const rules = checkDshRules({ root: dir }).hits.map((h) => h.rule).sort();
+    assert.deepEqual(rules, ['dsh/ctx-undeclared-property-read', 'dsh/host-api-guessed-fallback-chain']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('规则定义文件自身不被扫描（dsh-rules.mjs）', () => {
+  const dir = makePlugin({
+    'lib/core/verify-plugin/dsh-rules.mjs': "const message = '用 addRoute || route || use 兜底'\n",
+    'lib/other.js': 'const a = 1\n',
+  });
+  try {
+    const r = checkDshRules({ root: dir });
+    assert.equal(r.hits.length, 0);
+    assert.equal(r.scannedFiles, 1, '只应扫到 lib/other.js，规则定义文件被跳过');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('需要字符串内容的规则不受遮蔽影响（模块名 / require 内置）', () => {
+  const dir = makePlugin({
+    'lib/a.js': "import z from 'schemastery'\n",
+    'lib/client.js': "const fs = require('fs')\nwindow.__ModuleLoader__.load({})\n",
+  });
+  try {
+    const rules = checkDshRules({ root: dir }).hits.map((h) => h.rule).sort();
+    assert.deepEqual(rules, ['dsh/client-node-builtin-require', 'dsh/import-bare-schemastery']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

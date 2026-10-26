@@ -150,10 +150,32 @@ CIFS 等挂载上 chmod/chown 失败只记录、不中断同步，也不假装�
 ① 两个插件**不得互相 import**（各自独立实现，避免耦合与加载顺序问题）；
 ② 规则 id / 严重度 / 判定语义必须一致，增删改要两边同步；
 ③ 本插件的命中并入 `verify_plugin` 结论：blocker/error → problems，warning → warnings；
-④ 与 `checkClient` 重叠的规则（client 未走 `__ModuleLoader__`）只报一次。
-- 依据：`lib/core/verify-plugin/dsh-rules.mjs` 的 `DSH_RULES`。
-- 验证：`test/dsh-rules.test.mjs` 断言 9 条规则 id 与 git-push 一致，且每条都有正例与关键负例。
-- 违反后果：两份实现漂移会让「审计放行、工具报错」或反之，开发者不知道该信哪个。
+④ 与 `checkClient` 重叠的规则（client 未走 `__ModuleLoader__`）只报一次；
+⑤ **匹配只针对真实代码**：匹配前把注释与字符串内容遮蔽成等长空格（行号不变），
+  所以规则的 `message`/说明里写出违规写法（否则说不清规则是什么）不会触发规则自身；
+  模块名类规则（`from 'cordis'`、`require('fs')`）走「遮蔽视图确认 import/require 结构 → 回原文核对模块名」；
+⑥ 跳过规则定义文件本身（`dsh-rules.mjs`）。
+- 依据：`lib/core/verify-plugin/dsh-rules.mjs` 的 `DSH_RULES`、`maskCode`、`stringArgHits`。
+- 验证：`test/dsh-rules.test.mjs` 断言 9 条规则 id 与 git-push 一致、每条有正例与关键负例，
+  并含自指回归（说明文案/注释里的违规写法不产生 finding）与反向验证（真实代码仍报错）。
+- 违反后果：两份实现漂移会让「审计放行、工具报错」或反之，开发者不知道该信哪个；
+  匹配不遮蔽文案则规则会被自己的说明触发，产生「插件没这个毛病却报错」的假阳性。
+
+---
+
+### C-115 `patch_cifs_write` 只降级权限收紧，不动原子性
+CIFS/SMB 不实现 POSIX chmod，官方 `writeFileAtomic()` 在「chmod 临时目录」这步抛 `EPERM`，
+使 `write` / `edit` 在挂载盘上完全不可用（目录其实可写）。本工具给 `@deepseek-ai/dsh-fs-local`
+打补丁，把三处 chmod 包成「尽力而为」。三条硬约束：
+① **只吞「不支持 chmod」这一类错误**（EPERM / ENOTSUP / EOPNOTSUPP）；EACCES / ENOENT / EIO 等
+   真实故障照常抛出，不得一律 catch 吞掉；
+② **rename 与原子性完全不动**——不为了兼容 CIFS 改成「直接覆盖写」（那会让所有平台一起变脆）；
+③ 补丁目标是套件安装目录，**DSH 升级会覆盖**：工具必须幂等、带备份与 `revert`，
+   并明确报告「打完需重启 DSH 才生效」（官方模块已在宿主 ESM 缓存里）。
+- 依据：`lib/shared/patch_cifs_write/index.js`（`chmodBestEffort`、备份与 `node --check` 校验）。
+- 验证：`action=check` 能报出「是否已打 / chmod 是否真不可用」；`apply` 的 `dryRun` 缺省 true；
+  `revert` 能从最新备份还原；已打过时重复 `apply` 直接报告而不重复改。
+- 违反后果：把错误一律吞掉会掩盖真实故障；放弃原子性会连带影响所有平台。
 
 ---
 
@@ -320,6 +342,7 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.27 | 新增 C-115：`patch_cifs_write` 只降级权限收紧、不动原子性（只吞 EPERM/ENOTSUP/EOPNOTSUPP）；C-114 补 ⑤⑥：规则匹配只针对真实代码（遮蔽注释与字符串内容）。 |
 | 0.1.26 | C-105 补「backend 可省略、自动沿用最近 minihost 实例并给 backendSource」；C-108 补默认隔离 `DSH_HOME` 与 `--deps` 补依赖解析。 |
 | 0.1.25 | 新增 C-114：DSH 插件规则在 dsh-git-push（审计）与本插件（verify_plugin）两边同源维护、实现不耦合；9 条规则并入 verify_plugin 结论。 |
 | 0.1.24 | 新增 C-113：静默失败诊断只做离线组合（不启动宿主），`sync_plugin` 的权限收尾只改权限位、失败只记录；inject 校验 / 激活诊断 / 依赖体检 / HMR 判定并入 verify_plugin。 |

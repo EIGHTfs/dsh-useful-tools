@@ -11,6 +11,7 @@
 | `mark_read` | `commands` `undo` | 配置**读命令集合** + **自动标记钩子**（两者是同一功能）。`commands` 写命令串 / 传文件路径 / 不传用预置清单（`lib/core/mark-read/read-commands.json`）；`undo:true` 撤销。**两种读法都算**：① 宿主工具（如 `grep` 工具）；② `bash` 里跑的命令（`cat a.txt`、`grep x b.txt`）。跨平台别名归一：`Get-Content`/`gc`/`type`/`more` → cat，`Select-String`/`sls`/`findstr` → grep。集合里的命令执行后，钩子（`tools/post-execute`）自动把它读过的**所有文件**补发观测，不用指定文件；配置落盘 `<DSH_HOME>/useful-tools/config.json`、每次现读 ⇒ 配置一次永久有效 |
 | `quick_command` | `action` `name` `command` `cwd` `description` `timeoutMs` | **快捷命令**：执行/管理 `<DSH_HOME>/useful-tools/quick-commands.json` 里定义的命令。`action=run`（缺省，按 `name` 执行；同时传 `command` 会**先持久化再执行**，等效 add 后执行）/ `add` / `edit` / `delete` / `list`（列出所有名字+命令）。`cwd` 指定执行目录（缺省空 = 宿主进程 cwd）。**无内置预置**：定义完全来自该文件，首次是空表；重启 DSH 这类命令由使用方自己 `add` |
 | `sync_plugin` | `write` `profile` `source` `dshHome` `pluginName` `register` | 把插件工作区代码同步到 profile 的 local-plugins。缺省 dryRun，`write:true` 真写；`register:true` 写 profile 的 dependencies + bundles 并注册；`dshHome` 缺省当前实例，指向测试环境即可装进去。**写盘后自动**：权限/属主对齐（目录 755 / 文件 644，属主对齐 profile）+ 读权限自检 + 依赖体检（`file:` 路径失效会明确报出） |
+| `patch_cifs_write` | `action` `dryRun` `file` `packageRoot` `probeDir` | **给官方写/编辑工具打 CIFS 补丁**：CIFS/SMB 不实现 POSIX chmod，官方写入实现 `writeFileAtomic()` 在「chmod 临时目录」这步就抛 `EPERM`，导致 `write`/`edit` 在挂载盘上一次都写不进去（目录其实是可写的，极易误判成权限问题）。本工具把三处 chmod 包成「尽力而为」：只吞 EPERM/ENOTSUP/EOPNOTSUPP，其它错误照常抛，**rename 与原子性完全不动**。`action=check`（缺省，只读检测：定位文件 / 是否已打 / chmod 是否真不可用）/ `apply`（备份 → 替换 → `node --check` 校验；`dryRun` **缺省 true**，要真改传 `false`）/ `revert`（还原备份）。打完**必须重启 DSH** 才生效；DSH 升级会覆盖补丁，升级后重跑 `apply` |
 | `minihost` | `action` `plugin` `port` `path` `method` `body` `services` `env` `force` | **后端模拟**：本地 mini 宿主，把插件服务端代码跑起来。`action=start`（启动）/ `stop`（停止）/ `status`（状态）/ `call`（请求）；`services` 可注入宿主服务（插件依赖 storageDomain/sessions 等真实服务时用）。**默认隔离 `DSH_HOME`**（写到 `.minihost/home-<port>`，不碰真实会话/附件库），需要贴近真实环境时用 `env: { DSH_HOME: "<真实 .dsh>" }` 覆盖。内置 `webServer`/`tools`/`storageDomain`/`sessions` 宽容桩；`force:true` 在已有实例时按新参数重启；404 会带原因提示 |
 | `preview` | `action` `plugin` `spec` `out` `file` `port` `backend` `host` `lan` | **前端模拟**：插件预览页。`action=gen`（生成，**`preview.spec.mjs` 可选**——不写走通用自动挂载，标题默认取插件目录名；产物在插件内且未忽略时会提示入库风险）/ `serve`（启动，**`backend` 可省略**——自动沿用最近一次 minihost 实例并返回 `backendSource`；也可显式指真实 DSH 后端；`host=0.0.0.0` 或 `lan:true` 供局域网）/ `stop` / `status`。页面顶部内置错误面板（运行期错误直接可见） |
 | `verify_plugin` | `plugin` `source` `profile` `log` `ui` | 验证任意 DSH 插件是否装载成功（**只静态分析，不执行插件代码**）：入口/apply/注册调用/effect 形态 + **inject 服务名校验**（拼错给近似建议）+ **激活诊断**（dependencies / bundles / loader 行 / `did not activate` 归类）+ **依赖解析** + **客户端入口与 UI 骨架**（`controls=0` 直接判失败）+ **HMR 覆盖判定** + **DSH 插件规则（9 条，与 dsh-git-push 审计同步维护）** + 部署一致性 + 宿主日志。`plugin` 传插件名或根目录，缺省巡检所有已装插件 |
@@ -196,6 +197,33 @@ ui_check plugin: "<插件根>" file: "lib/ui.js" out: "/tmp/ui.html"
 | `dsh/ctx-undeclared-property-read` | **blocker** | 读 `ctx.sessionId` 等未注入属性（注释行豁免） |
 | `dsh/host-api-guessed-fallback-chain` | error | `addRoute \|\| route` 这类猜测 API 兜底链 |
 
+## CIFS/SMB 挂载下 `write` / `edit` 报 EPERM（`patch_cifs_write`）
+
+**症状**：工作区放在 CIFS 挂载上时，`write` / `edit` 一次都写不进去，报
+
+```
+EPERM: operation not permitted, chmod '.../.xxx.tmpdir'
+```
+
+而目录明明可写（`ls -ld` 是 `drwxrwxrwx`、`touch` 也成功）——极易误判成权限问题。
+
+**根因**：官方写入实现 `writeFileAtomic()` 的流程是
+`mkdir 临时目录 → chmod 0700 → open 临时文件 → chmod 0600 → write → fsync → (可选) chmod 目标 mode → rename 原子替换`。
+CIFS/SMB **不实现 POSIX chmod**，第二步就抛 `EPERM`，文件其实还没写进去。
+
+**处置**：`patch_cifs_write` 把三处 chmod 包成「尽力而为」（只吞 EPERM/ENOTSUP/EOPNOTSUPP，
+EACCES/ENOENT/EIO 等照常抛），`rename` 与原子性完全不动——只是「权限收紧」这一步降级。
+
+| 步骤 | 调用 | 说明 |
+| --- | --- | --- |
+| ① 体检 | `patch_cifs_write { action: "check" }` | 只读：定位 `dsh-fs-local/lib/index.js`、是否已打补丁、chmod 是否真的不可用 |
+| ② 预演 | `patch_cifs_write { action: "apply" }` | `dryRun` 缺省 `true`，只报计划不落盘 |
+| ③ 打补丁 | `patch_cifs_write { action: "apply", dryRun: false }` | 备份 → 替换 → `node --check` 校验 |
+| ④ 生效 | 重启 DSH | 官方模块已在宿主 ESM 缓存里，不重启不生效 |
+| ⑤ 回滚 | `patch_cifs_write { action: "revert", dryRun: false }` | 从最新备份还原 |
+
+DSH 升级会覆盖这套补丁，**升级后重跑一次 `apply` 即可**（幂等；已打过会直接报告）。
+
 ## 配置（`<DSH_HOME>/useful-tools/config.json`）
 
 ```json
@@ -284,6 +312,7 @@ dsh-skill-scoreboard 修复 TDZ 后同样渲染成功。
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.27 | 修 `verify_plugin` 的 DSH 规则自指误报：匹配前先把**注释与字符串内容**遮蔽成等长空格（行号不变），只对「真实代码」匹配，规则 `message` 文案里写出违规写法（如「用 addRoute \|\| route 兜底」）不再触发自己；需要字符串内容的模块名类规则改为「遮蔽视图确认 import/require 结构 → 回原文核对模块名」；并跳过规则定义文件本身。补齐 `patch_cifs_write` 的文档（工具表 + 「CIFS 挂载下报 EPERM」章节；工具本身随 0.1.26 提交，README 当时漏记）。 |
 | 0.1.26 | 按 dsh-session-migrate 的实战反馈改 5 处：`preview gen` 说明写明 `preview.spec.mjs` 可选、产物在插件内且未忽略时提示入库风险、页面顶部内置错误面板（运行期错误可见）；`preview serve` 的 `backend` 可省略（自动沿用最近一次 minihost 实例并返回 `backendSource`）；`minihost start` 新增 `env` 参数且**默认隔离 `DSH_HOME`**（写到 `.minihost/home-<port>`，依赖解析用 `--deps` 补回真实 profile）。多挂载点 `mounts[]` 记入 NOT-DONE 待办。 |
 | 0.1.25 | 把 dsh-git-push 的 9 条 DSH 插件规则移植到 `verify_plugin`（独立实现，两个插件不互相 import）：裸名 cordis/schemastery、render 空实现、client 引 Node 内置、凭据字段缺 `role('secret')`、patch insert id 冲突、client 未走 `__ModuleLoader__`、ctx 未注入属性（blocker）、猜宿主 API 兜底链。另修激活诊断的 profile 选择：显式指定 > web > 第一个（原先取 `profiles[0]` 会误判到历史 profile）。 |
 | 0.1.24 | 按 sub2api 插件开发的实战问题清单增强「静默失败」诊断：`verify_plugin` 新增 inject 服务名校验（拼错给近似建议）、激活诊断（dependencies / bundles / loader 行 / `did not activate` 归类）、依赖解析、客户端入口与 UI 骨架串联、HMR 覆盖判定；`sync_plugin` 写盘后自动对齐权限/属主并做读权限自检 + 依赖体检；`minihost` 内置 storageDomain/sessions 宽容桩、`force` 重启、404 原因提示；`test_env` 支持 shell wrapper 形式的 `dshBin` 并带出超时日志关键行；`ui_check` 增加一行摘要；`useful_tools` help 增加「症状 → 工具」索引。 |
