@@ -1,7 +1,7 @@
 {
   "name": "dsh-useful-tools",
-  "version": "0.1.29",
-  "description": "DSH 有用小工具箱：命令读文件自动算已读（mark_read）+ 编辑后标记免重读（mark_edit）+ 快捷命令（quick_command）+ 插件同步（sync_plugin）+ 后端模拟（minihost）+ 前端预览（preview）+ UI 静态骨架检查（ui_check）+ 插件验证（verify_plugin）+ 测试环境（test_env）+ 工具清单（useful_tools）",
+  "version": "0.1.32",
+  "description": "DSH 有用小工具箱：命令读文件自动算已读（mark_read）+ 编辑后标记免重读（mark_edit）+ 快捷命令（quick_command）+ 插件同步（sync_plugin）+ 后端模拟（minihost）+ 前端预览（preview）+ UI 静态骨架检查（ui_check）+ 插件验证（verify_plugin）+ 测试环境（test_env）+ GitHub 代理安装（github_mirror）+ 工具清单（useful_tools）",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

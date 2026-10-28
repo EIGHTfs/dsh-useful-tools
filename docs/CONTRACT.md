@@ -179,153 +179,59 @@ CIFS/SMB 不实现 POSIX chmod，官方 `writeFileAtomic()` 在「chmod 临时�
 
 ---
 
-### C-116 `mark_edit` 只补发观测，不改宿主、不读内容
+### C-116 `mark_edit` 全局续期：只补发观测，不改宿主、不读内容
 宿主的 `write` / `edit` 门禁由 `fs-observation-policy` 管：按 `actor.agent.session` 记账，
 每项 `targetKey → { kind, version }`，写入走 CAS。而 `version` 是
-`dev:ino:size:mtimeNs:ctimeNs`，其中时间戳在 CIFS/SMB 上会**晚到**——
-实测写完后 3ms 内 `mtime/ctime` 还会再变一次（内容未变）。官方在 `rename` 后**立刻** probe 取版本
-并补发观测，于是记下的是稳定前的值：下一次写改 CAS 对不上 ⇒ 报 `file changed since it was read`。
-所以需要补的不只是「fs 工具之外的改动」，**连续编辑**同样中招（实测 CIFS：`write → edit ✓ → edit ✗`；
-本地盘 `/tmp` 连编 3 次全过）。
+`dev:ino:size:mtimeNs:ctimeNs`，其中时间戳在 CIFS/SMB 上会**晚到**——实测写完后 3ms 内
+`mtime/ctime` 还会再变一次（内容未变）。官方在 `rename` 后**立刻** probe 取版本并补发观测，
+于是记下的是稳定前的值 ⇒ 下一次写改 CAS 对不上 ⇒ 报 `file changed since it was read`。
+所以「连续编辑」每次都要求重读，与官方「写后会自动补发」并不矛盾，是补发的值不稳。
 
-`mark_edit` 补的正是这个缺口，五条约束：
+`mark_edit` 做的就是把这步补稳，六条约束：
 ① **只走官方通道**：`ctx.emit('fs/observed', target, { kind:'present', version }, exec)`，
    `version` 由 `fs.stat()` 现取；不修改宿主、不碰私有接口、不动 `fs-observation-policy`；
 ② **actor 必须是本次调用的 `exec`**——台账按 owner 隔离，拿错 actor 等于替别人记账；
 ③ **不读文件内容**：它声明的是「这份现在是什么」，因此只在自己确实经手写入时用；
    内容不是自己写的文件仍应 `read`（否则等于自己拆掉门禁）；
 ④ `undo` 用**哨兵 version**（与真实版本必然不等）让 CAS 判 stale ⇒ 重新要求先读，即恢复门禁；
-⑤ **清单落盘 + 自动续期**：标记过的绝对路径写进 `config.json` 的 `editPaths`（跨重启有效，
-   与 mark_read 的键共存、互不覆盖）；这些路径每次被 `write`/`edit` 改动后，钩子延迟
-   `settleMs`（缺省 150ms）重新 probe 并补发**稳定版本**，使「标记一次」变成「长期有效」。
-   续期只作用于清单内路径——没标记的文件完全不受影响，因此不是放开宿主门禁。
-- 依据：`lib/core/mark-edit/index.js`（`parsePaths` / `runMarkEdit` / `STALE_SENTINEL`）、
-  `lib/core/mark-edit/store.js`（`editPaths` 持久清单）、`lib/core/mark-edit/hook.js`（续期钩子），
+⑤ **全局生效、缺省开启**：所有经 `write` / `edit` 改过的文件写完后都按稳定版本再补发一次，
+   **不指定文件、不维护路径清单**（与 mark_read「配置一次、全局生效」同口径）；
+   延迟 `editSettleMs`（缺省 1100ms，上限 2000）并在 +500/+1300ms 各再复核一次（实测漂移点 ~1000ms，早于它的复核拿到的是稳定前的值），开关与延迟**每次现读配置** ⇒ 改配置即时生效；
+   `paths` 只用于补标「没走 write/edit 的改动」（bash `sed -i` / heredoc / `tee`、别的会话写入）；
+⑥ **只处理「有明确目标文件」的写形态**：宿主 `write`/`edit` 取参数路径；bash 取命令串里的写目标
+   （`> >> tee sed -i cp mv touch truncate dd of=`）；`python -c` / `node -e` 这类无法可靠解析，不猜；
+⑦ 与 `mark_read` 的分工：读侧由 `mark_read` 解析（含 `cmd < 文件` 与**输出命中行**），写侧由本钩子兜住；
+   两边都只走官方 `fs/observed`，互不依赖。
+- 依据：`lib/core/mark-edit/hook.js`（全局续期钩子）、`lib/core/mark-edit/store.js`
+  （`editHook` / `editSettleMs` 配置，保留其它键）、`lib/core/mark-edit/index.js`（`runMarkEdit`），
   补发 recipe 复用 `lib/core/mark-read/observe.js` 的 `observeFileForHost`。
-- 验证：`test/mark-edit.test.mjs` 13 例（入参解析、present+version 补发、actor 透传、undo 哨兵、
-  不传 paths 续期、`settleMs` 取稳定值、坏路径隔离、上限截断、落盘保留其它键、
-  续期钩子只碰标记路径）；真实链路实测：CIFS 上 `write → edit ✓ → edit ✗`（版本晚到所致），
-  等时间戳稳定后补发观测即恢复可编辑。
+- 验证：`test/mark-edit.test.mjs` 12 例（缺省全局开启、任意 write/edit 都续期且无需标记、
+  read 不触发、关开关后不再续期、关闭时不注册、配置落盘与保留其它键、`paths` 补标与 `undo` 哨兵、上限截断）；
+  真实链路（CIFS）：`write → edit ✓ → edit ✗` 复现稳定前版本问题，补发稳定值后即可连续编辑。
 - 违反后果：绕过官方通道改宿主会在升级后失效；不读内容却标「已读」会诱发盲改；
-  undo 不用哨兵则无法恢复门禁。
+  把「全局」做成「按路径清单」则用户每次都要指定文件，等于没解决连续编辑的问题。
 
 ---
 
-## 2. 装配入口（cordis）
-
-### C-201 入口必须导出 `apply`
-`package.json` 的 `main`（或 `exports["."]`）指向的模块必须导出 `apply(ctx, config)`。
-入口只做再导出（`export * from ...`）时，`apply` 必须在跟进的文件里能找到。
-- 依据：`lib/index.js` 的 `export async function apply`；宿主按 `apply` 装载。
-- 验证：`verify_plugin` 的 `hasApply`；或 `grep -n "function apply" lib/index.js`。
-- 违反后果：宿主不把它当插件，工具一个都不会注册。
-
-### C-202 `apply` 的返回值必须是合法 effect
-合法形态只有：`undefined` / `null` / dispose 函数 / thenable / iterator。
-**禁止返回普通对象**（例如 `return { name, tools }`）。
-- 依据：cordis 4.0.5 `_execute → safeCollect`：普通对象抛 `TypeError: Invalid effect`，
-  整条 fiber 随即 `_unload()`，已注册的工具全部失效（0.1.1 修的就是这个）。
-- 验证：`verify_plugin` 的 `analysis.applyReturn.risky` 必须为 `false`；单测 `test/verify-plugin.test.mjs` 覆盖该判定。
-- 违反后果：插件看起来装了、工具一个都没有，日志里只有一行 `Invalid effect`。
-
-### C-203 注册必须走 `ctx.inject`
-工具注册写成 `ctx.inject(['tools'], (c) => c.get('tools').register(...))`；
-不要在 apply 里直接 `ctx.get('tools')`（未 inject 读取会抛）。
-- 依据：`lib/index.js` 的注册块；`dsh-git-push` 也踩过「直接读服务抛 without inject」。
-- 验证：`verify_plugin` 的 `registersTools` 为 `true`；`grep -n "inject(\['tools'\]" lib/index.js`。
-- 违反后果：注册代码抛错被 catch 吞掉，工具静默缺失。
-
-### C-204 本插件不提供斜杠指令
-宿主 `commands.register` 要求 `input` 必须带非空 `hint` 字符串；本插件已移除指令注册，只提供工具。
-若要恢复，必须按该契约补 `input: { hint: '...' }`，并补对应测试。
-- 依据：`dsh-commands` 的 `normalizeDefinition`；0.1.2 的移除记录。
-- 验证：`grep -rn "commands" lib/` 应无注册调用。
-- 违反后果：指令注册抛 `input hint must be a string`，被 catch 吞掉，界面看不到指令。
-
----
-
-## 3. 部署与同步
-
-### C-301 工作区源码是唯一真源
-`工作区/dsh-useful-tools` 是源码；profile 的 `local-plugins/<包名>` 是部署副本，
-`node_modules/<包名>` 是指向它的软链。
-- 依据：`lib/core/plugin-sync/sync-plugin.mjs` 的 `detectTargets` 与 profile 布局。
-- 验证：`verify_plugin` 的 `deploy.targets[].inSync` 为 `true`。
-- 违反后果：改了源码没同步，宿主跑的还是旧代码，排查时被假象带偏。
-
-### C-302 改完必须同步并逐文件一致
-改完源码后执行 `sync_plugin { write: true }`，同步后源码与部署副本逐文件内容一致。
-- 依据：`syncPlugin` 逐文件比内容，内容相同不写（幂等）。
-- 验证：`verify_plugin` 返回 `deploy.targets[].missing/different` 均为空。
-- 违反后果：部署副本落后，`hmr` 重载到的仍是旧代码。
-
-### C-303 文档随插件同步
-`docs/` 必须写进 `package.json` 的 `files` 字段——同步清单的唯一权威就是它
-（`SYNC_ENTRIES` 只是未声明 `files` 时的兜底白名单）。否则部署副本的 README 引用会指向不存在的文件。
-- 依据：`lib/core/plugin-sync/sync-plugin.mjs` 的 `packageFilesOf`（`files` 优先，未声明才用白名单）。
-- 验证：`sync_plugin` 的 dryRun 输出里应出现 `docs/CONTRACT.md`；`ls <部署副本>/docs`。
-- 违反后果：部署副本文档残缺，引用断链。
-
----
-
-## 4. 依赖与路径
-
-### C-401 零依赖
-只使用 Node 内置模块，`package.json` 不新增 `dependencies`；不为跑通写本地依赖清单。
-- 依据：`package.json` 无 dependencies；全部 `import` 均为 `node:` 前缀或相对路径。
-- 验证：`grep -rn "from '[^n.]" lib/ | grep -v "from '\./"` 应为空。
-- 违反后果：插件要装依赖才能起，部署与迁移成本陡增。
-
-### C-402 不写死路径
-`DSH_HOME`、profile、日志、部署目标一律运行时探测；代码里不出现**作为唯一来源**的机器专属绝对路径。
-探测候选（套件安装位、数据根等）允许存在，但必须同时满足三条：
-① 集中在文件顶部常量；② 环境变量或工具参数优先（`DSH_ROOT` / `DSH_HOME` / `--deps` 等）；
-③ 候选只是兜底，前面必须有上溯探测或环境探测。
-- 依据：`defaultPluginRoot()`、`inspectProfiles`、`detectTargets`、`logCandidates` 均为探测；
-  `lib/core/preview/locate.js` 的 `DSH_ROOT_CANDIDATES` / `DSH_HOME_ROOTS`、`lib/core/minihost/host.mjs`
-  的 `SUITE_NODE_MODULES` 是候选清单（env 优先、上溯在前）。
-- 验证：`grep -rn "/volume1\|/var/packages" lib/` 的每一处命中都必须是候选常量，且同文件存在环境变量优先分支；
-  不得出现在候选清单之外的业务逻辑里。
-- 违反后果：换机/换版本目录即失效。
-
-### C-403 单文件不超过 400 行
-超过就按职责拆分（例如 `verify-plugin/static.mjs` 与 `check.mjs`）。
-- 依据：仓库提交要求；当前最大文件 < 300 行。
-- 验证：`wc -l lib/**/*.js lib/**/*.mjs | sort -n | tail -3`。
-- 违反后果：单文件难维护，改动互相牵连。
-
----
-
-## 5. 验证（verify_plugin）
-
-### C-501 只静态分析，不执行被验证插件
-`verify_plugin` 只读文件，**不得 import、不得执行**目标插件代码。
-- 依据：`lib/core/verify-plugin/static.mjs` 与 `check.mjs` 只做 `readFileSync` / 目录遍历。
-- 验证：跑巡检后宿主日志不应出现被验证插件的启动输出（例如 session-conductor 的分组服务日志）。
-- 违反后果：验证动作本身产生副作用（起服务、写台账、改配置）。
-
-### C-502 硬伤与启发式分开
-`problems` 只放确定性硬伤（入口缺失、无 apply、apply 返回对象字面量、声明的 patch 缺 `insert`）；
-`warnings` 放启发式（没找到 tools 注册调用、patch id 与包名不同、入口靠 `export *` 转出）。
-- 依据：`analyzePlugin` 的 `problems` / `warnings` 分类。
-- 验证：单测覆盖「不注册工具的插件不算失败」。
-- 违反后果：把合法插件判成坏插件，工具失去可信度。
-
-### C-503 入口 `export *` 必须跟进
-入口只做再导出时，静态分析要沿 `export * from './x'` 跟进（最多 3 层），否则会误判「没有 apply」。
-- 依据：`collectSourceFiles`；`dsh-git-push` 实测为 index → app/index 两层。
-- 验证：对 `dsh-git-push` 跑 `verify_plugin` 应为 `ok: true` 且 `filesAnalyzed.length >= 2`。
-- 违反后果：主流写法（入口再导出）全部误报。
-
-### C-504 历史日志降级为提示
-日志文件最后写入时间早于源码最后修改时间时，命中的报错判为「修复前的历史记录」，进 `warnings` 而非 `problems`。
-- 依据：`verifyOne` 里 `srcMtime` 与日志 `mtime` 的比较。
-- 验证：单插件自验时旧报错不阻塞 `ok: true`。
-- 违反后果：修好的问题一直显示失败，用户对工具失去信任。
-
----
-
-## 6. 测试
+### C-117 `github_mirror` 只改 git 层的 insteadOf，不碰 npm 源与宿主代码
+DSH 从 GitHub 安装插件走 `pnpm add <git spec>` → git clone（`plugin-manager` 把 `github:` 与仓库 URL
+判为 `kind: 'git'`），**不经过 npm 源**——界面「安装源」只管 npm 包。pnpm 的父环境经
+`scrubbedParentEnv()` 清洗（剔除敏感键与 `DSH_*`），环境变量注入不可靠；HOME 保留 ⇒ `~/.gitconfig` 是稳定落点。
+本工具因此只写一类 git 配置：`url.<代理><host>/.insteadOf <host>/`，之后原地址 clone 无感走代理。
+六条约束：
+① **只碰这一种键**：`clear` 只删指向 `github.com` 等受管站点的 insteadOf 规则，不动 user/proxy 等其它配置；
+② **mirror 必须显式传**，不内置默认值（代理站会失效，静默写坏配置比不做更糟）；
+③ 候选清单**外置** `lib/core/github-mirror/candidates.json`（随仓库入库）：显式传入的地址自动并入，
+   探测结果回写（成功清零、失败累加，满 `MAX_FAILURES` 自动停用，可 `probe` 恢复）；
+④ `apply` **先探测再写**，探测失败按清单顺序自动轮换；全不可用则不写并报错，同时给出直连探测结果；
+⑤ `dryRun` 缺省 **true**：只报计划不落盘；
+⑥ 不改 DSH 源码、不改 npm 源、无需重启（git 每次现读配置）。
+- 依据：`lib/core/github-mirror/{index,store,git}.js`、`lib/core/github-mirror/candidates.json`。
+- 验证：`test/github-mirror.test.mjs` 11 例（归一化/并入/失败计数与停用/原子落盘/insteadOf 幂等读写删/
+  mirror 必填/dryRun 不落盘/探测失败不写/clear 只清受管规则/status 视图）；
+  真机实测：`git ls-remote https://github.com/git/git` 直连超时 → apply 后返回 HEAD → clear 后规则清零。
+- 违反后果：把代理写进 npm 源解决不了 GitHub 安装；不探测就写配置会在代理失效时静默失败；
+  清理范围过大可能删掉用户自己的 git 重写规则。
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
@@ -374,6 +280,9 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.32 | 新增 C-117：`github_mirror` 只改 git 层 insteadOf（mirror 必显式传、候选外置、失败计数轮换、dryRun 缺省 true）。 |
+| 0.1.31 | C-116 ⑥⑦ 改写：写形态含 bash 写命令；读侧补「重定向输入 + 输出命中行」口径（`mark_read`）。 |
+| 0.1.30 | C-116 改为「全局续期」：缺省开启、对**所有** write/edit 生效（不指定文件、不维护清单）；`paths` 仅用于补标非 write/edit 的改动；开关与延迟每次现读配置。 |
 | 0.1.29 | C-116 补 ⑤：清单落盘 + 自动续期（只对 `editPaths` 内路径、延迟 settle 取稳定版本）；补根因说明（version 含 mtimeNs/ctimeNs，CIFS 时间戳晚到）。 |
 | 0.1.28 | 新增 C-116：`mark_edit` 只补发观测（官方 `fs/observed` 通道、actor 用本次 exec、不读内容、undo 用哨兵版本恢复门禁）。 |
 | 0.1.27 | 新增 C-115：`patch_cifs_write` 只降级权限收紧、不动原子性（只吞 EPERM/ENOTSUP/EOPNOTSUPP）；C-114 补 ⑤⑥：规则匹配只针对真实代码（遮蔽注释与字符串内容）。 |

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "note": "GitHub 代理候选清单。mirror 必须以 / 结尾；hosts 为要重写的目标站点。failures 为连续失败次数，达到上限置 disabled，可用 probe 重测后恢复。本文件随仓库入库，运行期会回写学习结果。",
+  "candidates": [
+    {
+      "mirror": "https://ghfast.top/",
+      "hosts": [
+        "github.com"
+      ],
+      "disabled": false,
+      "failures": 0,
+      "lastOkAt": "2026-10-28T18:48:19.846Z",
+      "lastError": null,
+      "lastCheckedAt": "2026-10-28T18:48:19.846Z"
+    },
+    {
+      "mirror": "https://ghproxy.net/",
+      "hosts": [
+        "github.com"
+      ],
+      "disabled": false,
+      "failures": 0,
+      "lastOkAt": null,
+      "lastError": null,
+      "lastCheckedAt": null
+    },
+    {
+      "mirror": "https://gh-proxy.com/",
+      "hosts": [
+        "github.com"
+      ],
+      "disabled": false,
+      "failures": 0,
+      "lastOkAt": null,
+      "lastError": null,
+      "lastCheckedAt": null
+    },
+    {
+      "mirror": "http://127.0.0.1:9/",
+      "hosts": [
+        "github.com"
+      ],
+      "disabled": true,
+      "failures": 6,
+      "lastOkAt": null,
+      "lastError": "fatal: unable to access 'http://127.0.0.1:9/https://github.com/git/git.git/': Failed to connect to 127.0.0.1 port 9 after 0 ms: Couldn't connect to server",
+      "lastCheckedAt": "2026-10-28T19:10:23.792Z"
+    }
+  ]
+}
