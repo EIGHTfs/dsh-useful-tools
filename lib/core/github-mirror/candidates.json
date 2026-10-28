@@ -41,10 +41,10 @@
         "github.com"
       ],
       "disabled": true,
-      "failures": 6,
+      "failures": 7,
       "lastOkAt": null,
       "lastError": "fatal: unable to access 'http://127.0.0.1:9/https://github.com/git/git.git/': Failed to connect to 127.0.0.1 port 9 after 0 ms: Couldn't connect to server",
-      "lastCheckedAt": "2026-10-28T19:10:23.792Z"
+      "lastCheckedAt": "2026-10-28T19:22:27.730Z"
     }
   ]
 }
