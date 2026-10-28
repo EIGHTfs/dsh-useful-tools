@@ -152,10 +152,44 @@ test('git 层：写入 insteadOf 后可读回、幂等、可删除（临时 HOME
   });
 });
 
-test('工具：apply 必须显式传 mirror（不内置默认值）', async () => {
+test('planProbeOrder：显式最前、清单顺序跟随、rotate=false 只测显式', async () => {
+  const { planProbeOrder } = await import('../lib/core/github-mirror/index.js');
+  const list = [
+    { mirror: 'https://a/', hosts: ['github.com'], disabled: false, failures: 0 },
+    { mirror: 'https://b/', hosts: ['github.com'], disabled: true, failures: 3 },
+    { mirror: 'https://c/', hosts: ['github.com'], disabled: false, failures: 0 },
+  ];
+  assert.deepEqual(planProbeOrder(list, '', true).map((c) => c.mirror), ['https://a/', 'https://c/'], '停用项不进队列');
+  assert.deepEqual(planProbeOrder(list, 'https://c/', true), [
+    { mirror: 'https://c/', explicit: true },
+    { mirror: 'https://a/', explicit: false, hosts: ['github.com'] },
+  ], '显式排最前且去重');
+  assert.deepEqual(planProbeOrder(list, 'https://x/', false), [{ mirror: 'https://x/', explicit: true }], 'rotate=false 只测显式');
+  assert.deepEqual(planProbeOrder([], '', true), [], '清单空且没显式 ⇒ 空队列（必填分支）');
+  assert.deepEqual(planProbeOrder([{ mirror: 'https://b/', disabled: true, failures: 3 }], '', true), [], '全停用 ⇒ 空队列');
+});
+
+test('工具：清单为空时 mirror 才必填', async () => {
   const r = await runGithubMirror({ action: 'apply' }, {});
+  // 本用例的 beforeEach 把清单指到不存在的临时文件 ⇒ 清单为空，应报必填
   assert.equal(r.ok, false);
-  assert.match(r.error, /mirror 必填/);
+  assert.match(r.error, /必须显式传 mirror/);
+});
+
+test('工具：显式传入但不可访问的地址不入库，并告知不可访问', async () => {
+  await withTempHome(async () => {
+    // 端口 9（discard）必然连不上；rotate=false 避免去探测真实候选（不让单测依赖网络）
+    const r = await runGithubMirror(
+      { action: 'apply', mirror: 'http://127.0.0.1:9/', dryRun: false, rotate: false },
+      {},
+    );
+    assert.equal(r.ok, false);
+    assert.equal(r.rejected.length, 1, '应告知该地址不可访问');
+    assert.equal(r.rejected[0].persisted, false);
+    const { readCandidates } = await import('../lib/core/github-mirror/store.js');
+    const saved = readCandidates(process.env.DSH_GITHUB_MIRROR_CANDIDATES);
+    assert.equal(saved.some((it) => it.mirror.includes('127.0.0.1')), false, '不可访问的地址绝不写进候选清单');
+  });
 });
 
 test('工具：apply dryRun 缺省为 true —— 只报计划不写配置', async () => {

@@ -10,9 +10,11 @@
 //   ⑤ depHints：link:绝对路径 ⇒ 提示改 file:local-plugins/<插件>
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, lstatSync } from 'node:fs';import { join } from 'node:path';
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, lstatSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { dshRootOf, readHmrConfig, judgeHmr, planInstall, applyInstall, depHints, pickProfile, inspectProfiles } from '../lib/core/plugin-sync/install.mjs';
+import { ensureHmrConfig } from '../lib/core/plugin-sync/hmr-config.mjs';
 
 /** 造一个假 DSH_HOME：<tmp>/.dsh/profiles/web（withDsh=false 时目录结构只到 <tmp>/profiles/web）。 */
 function fakeHome({ profile = 'web' } = {}) {
@@ -154,4 +156,143 @@ test('pickProfile：优先 local-plugins；多命中要求显式；只在 node_m
     // 完全没装 ⇒ 不命中
     assert.equal(pickProfile(inspectProfiles(sandboxDir), 'nope').dir, '');
   } finally { clean(sandboxDir); }
+});
+
+// ── ensureHmrConfig：sync_plugin 的 hmr 参数背后的幂等启用 ─────────────────
+
+/** 造一个带 cordis.patch.yml 的假 profile。 */
+function fakeProfile(patchText) {
+  const { sandboxDir, pd } = fakeHome();
+  if (patchText !== undefined) writeFileSync(join(pd, 'cordis.patch.yml'), patchText, 'utf8');
+  return { sandboxDir, pd, patchPath: join(pd, 'cordis.patch.yml') };
+}
+const readPatch = (f) => readFileSync(f.patchPath, 'utf8');
+
+test('ensureHmrConfig：没有 hmr 条目时追加（dryRun 不动盘，apply 才写）', () => {
+  const f = fakeProfile('- insert:\n    - id: some-plugin\n      name: some-plugin\n');
+  try {
+    const dry = ensureHmrConfig({ profileDir: f.pd });
+    assert.equal(dry.ok, true);
+    assert.deepEqual(dry.changed, [], 'dryRun 不该报已改');
+    assert.equal(dry.plan.length, 1, 'dryRun 要给出计划');
+    assert.equal(readPatch(f).includes('hmr'), false, 'dryRun 绝不能写盘');
+
+    const real = ensureHmrConfig({ profileDir: f.pd }, { write: true });
+    assert.equal(real.changed.length, 1, 'apply 后 changed 应记录实际落盘项');
+    assert.match(real.changed[0], /新建 hmr 条目/);
+    const text = readPatch(f);
+    assert.match(text, /^- insert:/, '原有内容必须保留');
+    assert.match(text, /- id: hmr/);
+    assert.match(text, /root:\s*\n\s+- local-plugins/);
+    // base 用版本无关表达式，写死版本目录会在升级后崩掉 hmr
+    assert.match(text, /profileContext/);
+    assert.equal(real.restartNote !== undefined, true, '首次启用要给重启提示');
+  } finally {
+    clean(f.sandboxDir);
+  }
+});
+
+test('ensureHmrConfig：已齐备则不动盘（幂等）', () => {
+  const text = '- id: hmr\n  config:\n    base: !!js \'ctx.get("profileContext").dir\'\n    root:\n      - local-plugins\n';
+  const f = fakeProfile(text);
+  try {
+    const r = ensureHmrConfig({ profileDir: f.pd }, { write: true });
+    assert.deepEqual(r.changed, [], '齐备时不该有任何改动');
+    assert.equal(r.nowWatching, true);
+    assert.equal(readPatch(f), text, '文件必须逐字节不变');
+  } finally {
+    clean(f.sandboxDir);
+  }
+});
+
+test('ensureHmrConfig：root 为空时补 local-plugins，并保留其它块', () => {
+  const text = "- id: hmr\n  config:\n    base: !!js 'ctx.get(\"profileContext\").dir'\n    root: []\n- id: computer-use\n  disabled: true\n";
+  const f = fakeProfile(text);
+  try {
+    assert.equal(readHmrConfig(f.pd).root.length, 0, '前置：root 为空');
+    const r = ensureHmrConfig({ profileDir: f.pd }, { write: true });
+    assert.equal(r.changed.length, 1, `应补一项，实际 ${JSON.stringify(r.changed)}`);
+    assert.equal(readHmrConfig(f.pd).root.includes('local-plugins'), true);
+    const after = readPatch(f);
+    assert.match(after, /computer-use/, '其它条目不能被吃掉');
+    assert.match(after, /disabled: true/);
+  } finally {
+    clean(f.sandboxDir);
+  }
+});
+
+test('ensureHmrConfig：base 写死版本目录 ⇒ 给出警告而不静默改', () => {
+  const f = fakeProfile("- id: hmr\n  config:\n    base: /x/0.2.0/.dsh/profiles/web\n    root:\n      - local-plugins\n");
+  try {
+    const dry = ensureHmrConfig({ profileDir: f.pd });
+    assert.equal(dry.plan.some((line) => line.includes('版本目录')), true, `应警告写死版本目录：${JSON.stringify(dry.plan)}`);
+    assert.equal(readPatch(f), "- id: hmr\n  config:\n    base: /x/0.2.0/.dsh/profiles/web\n    root:\n      - local-plugins\n", '警告不应改盘');
+  } finally {
+    clean(f.sandboxDir);
+  }
+});
+
+test('judgeHmr：base 是 !!js 表达式时按当前 profile 判定（不能拿表达式当路径）', () => {
+  const { sandboxDir, pd } = fakeHome();
+  try {
+    mkdirSync(join(pd, 'local-plugins', 'demo'), { recursive: true });
+    const cfg = { found: true, base: 'ctx.get("profileContext").dir', root: ['local-plugins'] };
+    assert.equal(judgeHmr({ hmr: cfg, profileDir: pd, pluginName: 'demo' }).hot, true);
+    assert.match(judgeHmr({ hmr: cfg, profileDir: pd, pluginName: 'nope' }).reason, /没装到该 profile/);
+    // 普通路径 base 仍按原语义工作
+    assert.equal(judgeHmr({ hmr: { ...cfg, base: pd }, profileDir: pd, pluginName: 'demo' }).hot, true);
+  } finally {
+    clean(sandboxDir);
+  }
+});
+
+// ── ensureHmrConfig 的结构完整性（曾把 patch 文件写坏：留下重复 root 键与错缩进）──
+
+test('ensureHmrConfig：任何入口形态写盘后都必须结构合法（无重复键、层级正确）', () => {
+  const inputs = {
+    'inline 空数组': "- id: hmr\n  config:\n    base: !!js 'ctx.get(\"profileContext\").dir'\n    root: []\n",
+    '行内一项': "- id: hmr\n  config:\n    base: !!js 'ctx.get(\"profileContext\").dir'\n    root: [other]\n",
+    '完全没有 root': '- id: hmr\n  config:\n    base: !!js \'x\'\n',
+    'root 为空行': '- id: hmr\n  config:\n    root:\n',
+    '有其它键要保留': "- id: hmr\n  config:\n    base: !!js 'x'\n    root: []\n    throttleMs: 500\n",
+  };
+  for (const [label, text] of Object.entries(inputs)) {
+    const f = fakeProfile(text);
+    try {
+      ensureHmrConfig({ profileDir: f.pd }, { write: true });
+      const out = readPatch(f);
+      const lines = out.split('\n');
+      // ① root 键只能出现一次（重复键会让 YAML 语义不确定）
+      const rootKeys = lines.filter((l) => /^[ \t]+root:/.test(l));
+      assert.equal(rootKeys.length, 1, `${label}：root 键应唯一，实际 ${rootKeys.length} 个\n${out}`);
+      // ② base 键也只能出现一次
+      assert.equal(lines.filter((l) => /^[ \t]+base:/.test(l)).length, 1, `${label}：base 应唯一\n${out}`);
+      // ③ 必须真的 watch 到 local-plugins
+      assert.equal(readHmrConfig(f.pd).root.includes('local-plugins'), true, `${label}：root 未含 local-plugins\n${out}`);
+      // ④ 层级：root 的列表项必须比 root: 更深，且 config 缩进保持
+      const cfgLine = lines.find((l) => /^[ \t]+config:/.test(l)) || '';
+      assert.match(cfgLine, /^[ \t]+config:$/, `${label}：config 缩进异常\n${out}`);
+      const rootLineIdx = lines.findIndex((l) => /^[ \t]+root:/.test(l));
+      const item = lines[rootLineIdx + 1] || '';
+      const indentOf = (l) => (l.match(/^[ \t]*/m) || [''])[0].length;
+      assert.ok(indentOf(item) > indentOf(lines[rootLineIdx]), `${label}：列表项未深缩进\n${out}`);
+      // ⑤ 其它键不丢
+      if (label === '有其它键要保留') assert.match(out, /throttleMs: 500/, `${label}：其它配置键被吃掉\n${out}`);
+    } finally {
+      clean(f.sandboxDir);
+    }
+  }
+});
+
+test('ensureHmrConfig：重复执行不产生漂移（第二次写完文件逐字节不变）', () => {
+  const f = fakeProfile('- id: hmr\n  config:\n    root: []\n');
+  try {
+    ensureHmrConfig({ profileDir: f.pd }, { write: true });
+    const first = readPatch(f);
+    const again = ensureHmrConfig({ profileDir: f.pd }, { write: true });
+    assert.deepEqual(again.changed, [], '第二次应无改动');
+    assert.equal(readPatch(f), first, '幂等：文件不能被再改写');
+  } finally {
+    clean(f.sandboxDir);
+  }
 });

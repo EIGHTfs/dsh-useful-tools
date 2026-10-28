@@ -45,9 +45,11 @@ test('名单配置：逗号字符串生效（自定义命令集合）', () => {
 
 test('钩子：先放行原样返回；命中文件补发观测；失败不阻断；开关/缺上下文不注册', async () => {
   let handler = null;
-  const ctx = { on: (_n, fn) => { handler = fn; } };
+  const ctx = { on: (_n, fn) => { handler = fn; return () => true; } };
   const { ctx: fsCtx, emitted } = fakeFsCtx();
-  assert.equal(registerObserveHook(ctx, { fsCtx, cfg: { observeTools: 'grep,ripgrep' }, log: null }), true);
+  const disposer = registerObserveHook(ctx, { fsCtx, cfg: { observeTools: 'grep,ripgrep' }, log: null });
+  // 注册成功返回 ctx.on 的 disposer（热重载时 cordis 靠它解绑，避免监听叠加）
+  assert.equal(typeof disposer, 'function');
   const decision = { kind: 'allow' };
   const got = await handler({ name: 'grep', arguments: {} }, { matches: [{ path: '/x/a.js' }] }, async () => decision);
   assert.equal(got, decision);

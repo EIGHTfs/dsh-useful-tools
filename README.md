@@ -45,6 +45,7 @@ mark_edit  { settleMs: 1200 }                             // settleMs 可空；�
 
 ```jsonc
 sync_plugin   { write: true, register: true }              // write 必填才真写；register 可空
+sync_plugin   { write: true, hmr: true }                    // hmr 可空；true=启用热重载（缺省 dryRun 只报计划）
 verify_plugin { plugin: "<插件根>" }                        // plugin 可空；省略则巡检所有已装插件
 minihost      { action: "start", plugin: "<插件根>" }        // action 可空，缺省 start
 preview       { action: "gen", plugin: "<插件根>" }          // spec 可空，省略则自动挂载
@@ -59,8 +60,9 @@ ui_check      { plugin: "<插件根>" }                         // write 可空�
 ### 环境修复与杂项
 
 ```jsonc
-github_mirror     { action: "apply", mirror: "https://<代理>/" }        // mirror 必填；dryRun 缺省 true
-github_mirror     { action: "apply", mirror: "https://<代理>/", dryRun: false }
+github_mirror     { action: "apply" }                                   // mirror 可省：按候选清单取第一个可用的
+github_mirror     { action: "apply", mirror: "https://<代理>/" }         // 显式指定代理（dryRun 缺省 true）
+github_mirror     { action: "apply", dryRun: false }                    // 探测通过后真写入
 github_mirror     { action: "clear", dryRun: false }                    // 恢复直连
 github_mirror     { action: "probe" }                                   // 只探测，不写配置
 patch_cifs_write  { action: "check" }                                   // action 可空，缺省 check
@@ -70,8 +72,9 @@ quick_command     { action: "list" }                                    // actio
 useful_tools      { action: "help" }                                     // action 可空；tool 可空
 ```
 
-`github_mirror` 的 `mirror` 必填，省略会直接报错；`hosts` 可空（缺省 `github.com`），
-`rotate` 可空（缺省 true，探测失败自动换候选）。
+`github_mirror` 的 `mirror` 可省——省略时按候选清单顺序自动取第一个可用的；仅当清单为空或全部停用才必须传。
+`hosts` 可空（缺省 `github.com`）；`rotate` 可空（缺省 true，探测失败换下一个候选）。
+探测不通的地址不会被写进候选清单，只在返回的 `rejected` 里告知。
 `patch_cifs_write` 的 `apply` / `revert` 需显式传 `dryRun: false` 才落盘。
 `quick_command` 的 `cwd` 可空，省略则沿用宿主进程工作目录。
 
@@ -91,4 +94,5 @@ useful_tools      { action: "help" }                                     // acti
 
 - [机制说明](docs/机制说明.md)
 - [契约](docs/CONTRACT.md)
+- [版本记录](docs/VERSIONS.md)
 - [未做事项](docs/NOT-DONE.md)

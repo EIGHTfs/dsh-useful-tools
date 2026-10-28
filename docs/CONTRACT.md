@@ -217,21 +217,53 @@ CIFS/SMB 不实现 POSIX chmod，官方 `writeFileAtomic()` 在「chmod 临时�
 DSH 从 GitHub 安装插件走 `pnpm add <git spec>` → git clone（`plugin-manager` 把 `github:` 与仓库 URL
 判为 `kind: 'git'`），**不经过 npm 源**——界面「安装源」只管 npm 包。pnpm 的父环境经
 `scrubbedParentEnv()` 清洗（剔除敏感键与 `DSH_*`），环境变量注入不可靠；HOME 保留 ⇒ `~/.gitconfig` 是稳定落点。
-本工具因此只写一类 git 配置：`url.<代理><host>/.insteadOf <host>/`，之后原地址 clone 无感走代理。
-六条约束：
-① **只碰这一种键**：`clear` 只删指向 `github.com` 等受管站点的 insteadOf 规则，不动 user/proxy 等其它配置；
-② **mirror 必须显式传**，不内置默认值（代理站会失效，静默写坏配置比不做更糟）；
-③ 候选清单**外置** `lib/core/github-mirror/candidates.json`（随仓库入库）：显式传入的地址自动并入，
-   探测结果回写（成功清零、失败累加，满 `MAX_FAILURES` 自动停用，可 `probe` 恢复）；
-④ `apply` **先探测再写**，探测失败按清单顺序自动轮换；全不可用则不写并报错，同时给出直连探测结果；
-⑤ `dryRun` 缺省 **true**：只报计划不落盘；
-⑥ 不改 DSH 源码、不改 npm 源、无需重启（git 每次现读配置）。
+本工具因此只写一类 git 配置：`url.<代理>https://<host>/.insteadOf https://<host>/`，之后原地址 clone 无感走代理。
+
+七条约束：
+① **只碰这一种键**：`clear` 只删指向 `github.com` 等受管站点的规则，不动 user/proxy 等其它配置；
+   并按后缀兼容匹配早期误写的裸主机形式，否则清不掉历史残留；
+② **insteadOf 两端都必须带协议**：git 按字符串前缀匹配目标 URL，写成裸主机 `github.com/`
+   匹配不到 `https://github.com/...` ⇒ 重写静默失效、表现为直连超时（会被误判成代理不可用）；
+③ **`mirror` 可省**：省略时按候选清单顺序探测，取第一个可用的；仅当清单为空或全部停用才必须显式传
+   （工具不内置任何"默认代理"，清单是数据文件，可增删可停用）；
+④ **探测不通的地址不入库**：显式传入但探测失败的只在返回值 `rejected` 里告知（`persisted: false`），
+   不污染候选表；清单内地址失败才累加 `failures`，满 `MAX_FAILURES` 自动停用、`probe` 成功可恢复；
+⑤ `apply` **先探测再写**，失败按清单顺序自动轮换（`rotate: false` 只测显式那一个）；
+   全不可用则不写并报错，同时给出直连探测结果；
+⑥ `dryRun` 缺省 **true**：只报计划，**探测结果也不落盘**（避免每次预演都污染失败计数）；
+⑦ 不改 DSH 源码、不改 npm 源、无需重启（git 每次现读配置）。
 - 依据：`lib/core/github-mirror/{index,store,git}.js`、`lib/core/github-mirror/candidates.json`。
-- 验证：`test/github-mirror.test.mjs` 11 例（归一化/并入/失败计数与停用/原子落盘/insteadOf 幂等读写删/
-  mirror 必填/dryRun 不落盘/探测失败不写/clear 只清受管规则/status 视图）；
-  真机实测：`git ls-remote https://github.com/git/git` 直连超时 → apply 后返回 HEAD → clear 后规则清零。
-- 违反后果：把代理写进 npm 源解决不了 GitHub 安装；不探测就写配置会在代理失效时静默失败；
-  清理范围过大可能删掉用户自己的 git 重写规则。
+- 验证：`test/github-mirror.test.mjs` 16 例（归一化、并入与更新、失败计数与停用恢复、原子落盘、
+  `planProbeOrder` 纯函数四态、insteadOf 带协议与幂等读写删、清单为空才必填、不可达不入库、
+  dryRun 不落盘、clear 只清受管规则含历史残留、status 视图、入库清单不被测试写脏）；
+  真机实测：裸主机形式下 `git ls-remote https://github.com/git/git` 超时（退出码 124）
+  → 改为带协议后同一命令返回 HEAD（退出码 0）→ `clear` 后规则清零。
+- 违反后果：② 错则功能整体静默失效；③④ 错则候选表被不可用地址填满；
+  ⑥ 错则一次预演就把候选误标为失败。
+
+---
+
+### C-118 `sync_plugin` 的 `hmr` 参数：幂等启用热重载，只补不破坏
+「改代码要不要重启」取决于两处：① profile 的 `cordis.patch.yml` 有无 `- id: hmr` 且 `root` 含 `local-plugins`；
+② 插件真源在 `local-plugins`（hmr 默认把 `node_modules` 整棵剪枝）。本参数管 ①，②由 `judgeHmr` 判定并回报。
+
+四条约束：
+① **base 必须用版本无关表达式** `!!js 'ctx.get("profileContext").dir'`；
+   写死版本目录会在升级后指向不存在的目录，hmr 在 init 阶段 `realpathSync(baseDir)` 抛错 →
+   监视器根本没建起来，且崩掉的 hmr 连配置变更都不再监视（改配置不自愈，必须重启一次）；
+   发现写死的版本目录只**警告并给替换方案**，不静默改动语义无关的其它键；
+② **整块重建，不逐行替换**：`root: []` 这类行内写法用逐行正则会留下**重复键与错缩进**（实测写坏过 patch 文件），
+   因此按「root = 原有项 ∪ local-plugins（保序）、其它键原样保留」重建整块；
+③ **`changed` 仅表示已落盘**：dryRun 只填 `plan`，不得谎报已改（否则调用方以为生效）；
+   重复执行必须逐字节幂等；
+④ `hmr: true` 且未传 `write` 时只报计划；`hmr` 缺省完全不碰配置文件。
+- 依据：`lib/core/plugin-sync/hmr-config.mjs`（`readHmrConfig` / `ensureHmrConfig` / `rebuildHmrBlock`），
+  `install.mjs` 的 `readHmrConfig` 转调它、`judgeHmr` 负责布局判定。
+- 验证：`test/sync-plugin-install.test.mjs` 中 ensureHmrConfig 六例——含五种入口形态写盘后的**结构断言**
+  （root/base 键唯一、列表项更深缩进、其它键不丢）、二次执行逐字节不变、
+  `!!js` 表达式 base 下 `judgeHmr` 按当前 profile 判定（不能拿表达式当路径）。
+- 违反后果：① 错则升级后热重载整体静默失效；② 错则写坏 profile 配置（破坏性）；
+  ③ 错则 dryRun 看起来像已生效。
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
@@ -255,10 +287,11 @@ DSH 从 GitHub 安装插件走 `pnpm add <git spec>` → git clone（`plugin-man
 
 ## 7. 版本与文档
 
-### C-701 版本三处同步
-`package.json` 的 `version` 与 `README.md` 的版本记录表必须一致（本插件无独立 VERSION 常量）。
-- 依据：`package.json` / `README.md` 版本记录。
-- 验证：`grep '"version"' package.json` 与 README 表格首行对照。
+### C-701 版本两处同步
+`package.json` 的 `version` 与 `docs/VERSIONS.md` 版本记录表的**首行**必须一致。
+版本记录不放 README：README 是精简使用手册（见 readme-spec），发布历史属文档，移入 docs。
+- 依据：`package.json` / `docs/VERSIONS.md`。
+- 验证：`grep '"version"' package.json` 与 VERSIONS 表首行版本号对照。
 - 违反后果：装的版本和文档写的版本对不上。
 
 ### C-702 README 只做门面，契约引用本文件
@@ -280,6 +313,7 @@ README 保留：简介、工具表、用法、配置、安装、目录结构、�
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.1.33 | C-117 改 7 条：`mirror` 改为**可省**（省略则按候选清单顺序取第一个可用的，仅清单空/全停用才必填）、不可达地址不入库只报 `rejected`、明确 **insteadOf 两端都必须带协议**（裸主机形式会静默失效）。新增 C-118：`sync_plugin` 的 `hmr` 参数幂等启用热重载（base 用版本无关表达式、整块重建不逐行替换、`changed` 仅表示已落盘）。 |
 | 0.1.32 | 新增 C-117：`github_mirror` 只改 git 层 insteadOf（mirror 必显式传、候选外置、失败计数轮换、dryRun 缺省 true）。 |
 | 0.1.31 | C-116 ⑥⑦ 改写：写形态含 bash 写命令；读侧补「重定向输入 + 输出命中行」口径（`mark_read`）。 |
 | 0.1.30 | C-116 改为「全局续期」：缺省开启、对**所有** write/edit 生效（不指定文件、不维护清单）；`paths` 仅用于补标非 write/edit 的改动；开关与延迟每次现读配置。 |

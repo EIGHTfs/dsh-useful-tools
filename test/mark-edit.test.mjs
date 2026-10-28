@@ -63,9 +63,10 @@ function fakeFsCtx({ version = 'settled-v', kind = 'file' } = {}) {
 /** 收集 tools/post-execute 监听器（只收我们注册的那个）。 */
 function captureHook(fsCtx, cfg = {}) {
   const listeners = [];
-  const ctx = { on: (name, fn) => { if (name === 'tools/post-execute') listeners.push(fn); } };
-  const ok = registerEditRefreshHook(ctx, { fsCtx, cfg });
-  return { ok, listeners };
+  // mock 与真实 cordis 同契约：on() 返回 disposer（真实实现就是返回解绑函数）
+  const ctx = { on: (name, fn) => { if (name === 'tools/post-execute') listeners.push(fn); return () => true; } };
+  const disposer = registerEditRefreshHook(ctx, { fsCtx, cfg });
+  return { ok: typeof disposer === 'function', listeners };
 }
 
 test('parsePaths：逗号/分号/换行混用；@清单文件', () => {
