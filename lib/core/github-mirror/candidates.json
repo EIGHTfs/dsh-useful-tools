@@ -9,9 +9,9 @@
       ],
       "disabled": false,
       "failures": 0,
-      "lastOkAt": "2026-10-28T18:48:19.846Z",
+      "lastOkAt": "2026-10-28T19:38:37.489Z",
       "lastError": null,
-      "lastCheckedAt": "2026-10-28T18:48:19.846Z"
+      "lastCheckedAt": "2026-10-28T19:38:37.489Z"
     },
     {
       "mirror": "https://ghproxy.net/",
@@ -34,17 +34,6 @@
       "lastOkAt": null,
       "lastError": null,
       "lastCheckedAt": null
-    },
-    {
-      "mirror": "http://127.0.0.1:9/",
-      "hosts": [
-        "github.com"
-      ],
-      "disabled": true,
-      "failures": 7,
-      "lastOkAt": null,
-      "lastError": "fatal: unable to access 'http://127.0.0.1:9/https://github.com/git/git.git/': Failed to connect to 127.0.0.1 port 9 after 0 ms: Couldn't connect to server",
-      "lastCheckedAt": "2026-10-28T19:22:27.730Z"
     }
   ]
 }

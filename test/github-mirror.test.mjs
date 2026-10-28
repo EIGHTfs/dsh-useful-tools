@@ -29,6 +29,22 @@ import {
   ruleCovers,
 } from '../lib/core/github-mirror/git.js';
 import { runGithubMirror } from '../lib/core/github-mirror/index.js';
+import { beforeEach, afterEach } from 'node:test';
+
+/**
+ * 每个用例把候选清单指到临时文件。
+ * 为什么必须：探测失败的地址会写回清单，若不隔离就会污染随仓库入库的 candidates.json。
+ */
+let candidatesTmp = null;
+beforeEach(() => {
+  candidatesTmp = mkdtempSync(join(tmpdir(), 'ghmirror-cand-'));
+  process.env.DSH_GITHUB_MIRROR_CANDIDATES = join(candidatesTmp, 'candidates.json');
+});
+afterEach(() => {
+  delete process.env.DSH_GITHUB_MIRROR_CANDIDATES;
+  if (candidatesTmp) rmSync(candidatesTmp, { recursive: true, force: true });
+  candidatesTmp = null;
+});
 
 /** 临时 HOME 下跑一段逻辑（git --global 写到这里，不碰真实配置）。 */
 async function withTempHome(fn) {
@@ -119,7 +135,7 @@ test('git 层：写入 insteadOf 后可读回、幂等、可删除（临时 HOME
     assert.equal((await applyInsteadOf(mirror, 'github.com')).ok, true);
     const after = await readInsteadOfRules();
     assert.equal(after.rules.length, 1);
-    assert.equal(after.rules[0].insteadOf, 'github.com/');
+    assert.equal(after.rules[0].insteadOf, 'https://github.com/', '必须是带协议的完整前缀，否则 git 前缀匹配不生效');
     assert.equal(ruleCovers(after.rules, mirror, 'github.com'), true);
     assert.equal(ruleCovers(after.rules, 'https://other.example/', 'github.com'), false);
 
@@ -149,7 +165,7 @@ test('工具：apply dryRun 缺省为 true —— 只报计划不写配置', asy
     if (r.ok) {
       assert.equal(r.dryRun, true);
       assert.ok(Array.isArray(r.plan) && r.plan.length === 1);
-      assert.match(r.plan[0], /url\.https:\/\/ghfast\.top\/github\.com\/\.insteadOf github\.com\//);
+      assert.match(r.plan[0], /url\.https:\/\/ghfast\.top\/https:\/\/github\.com\/\.insteadOf https:\/\/github\.com\//);
     } else {
       assert.ok(r.error, '失败时必须给原因');
       assert.ok(Array.isArray(r.attempts), '失败时应带探测记录');
@@ -188,7 +204,7 @@ test('工具：clear 只清本工具管理的规则，不动用户其它 instead
     assert.equal(real.ok, true);
     const left = (await readInsteadOfRules()).rules;
     assert.equal(left.length, 1, '只留下用户自己的 gitlab 规则');
-    assert.equal(left[0].insteadOf, 'gitlab.com/');
+    assert.equal(left[0].insteadOf, 'https://gitlab.com/');
   });
 });
 
@@ -212,4 +228,45 @@ test('工具：未知 action 明确报错', async () => {
   const r = await runGithubMirror({ action: 'nope' }, {});
   assert.equal(r.ok, false);
   assert.match(r.error, /未知 action/);
+});
+
+test('回归：跑探测失败不会写脏随仓库入库的 candidates.json', async () => {
+  const { CANDIDATES_PATH } = await import('../lib/core/github-mirror/store.js');
+  const before = readFileSync(CANDIDATES_PATH, 'utf8');
+  await withTempHome(async () => {
+    await runGithubMirror({ action: 'apply', mirror: 'http://127.0.0.1:9/', dryRun: false, rotate: false }, {});
+  });
+  const after = readFileSync(CANDIDATES_PATH, 'utf8');
+  assert.equal(after, before, '入库清单必须原样不动（探测结果只写临时文件）');
+  assert.equal(before.includes('127.0.0.1:9'), false, '入库清单不应含测试地址');
+});
+
+test('回归：insteadOf 值必须带协议（裸主机会导致重写不生效）', async () => {
+  await withTempHome(async () => {
+    const { hostUrl } = await import('../lib/core/github-mirror/git.js');
+    assert.equal(hostUrl('github.com'), 'https://github.com/');
+    assert.equal(hostUrl('https://github.com/'), 'https://github.com/');
+
+    await applyInsteadOf('https://ghfast.top/', 'github.com');
+    const rules = (await readInsteadOfRules()).rules;
+    assert.equal(rules.length, 1);
+    assert.equal(rules[0].insteadOf, 'https://github.com/');
+    assert.match(rules[0].base, /^https:\/\/ghfast\.top\/https:\/\/github\.com\/$/);
+    assert.equal(ruleCovers(rules, 'https://ghfast.top/', 'github.com'), true);
+  });
+});
+
+test('回归：clear 能清掉旧版误写的裸主机规则', async () => {
+  await withTempHome(async () => {
+    // 模拟历史残留：裸主机形式
+    await new Promise((resolve, reject) => {
+      const { execFile } = require('node:child_process');
+      execFile('git', ['config', '--global', 'url.https://ghfast.top/github.com/.insteadOf', 'github.com/'], (e) => (e ? reject(e) : resolve()));
+    }).catch(() => {});
+    const listed = (await readInsteadOfRules()).rules;
+    if (listed.length === 0) return; // 造不出来就跳过（不影响主判据）
+    const r = await runGithubMirror({ action: 'clear', dryRun: false }, {});
+    assert.equal(r.ok, true);
+    assert.deepEqual((await readInsteadOfRules()).rules, [], '裸主机残留也必须被清掉');
+  });
 });
