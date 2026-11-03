@@ -265,6 +265,28 @@ DSH 从 GitHub 安装插件走 `pnpm add <git spec>` → git clone（`plugin-man
 - 违反后果：① 错则升级后热重载整体静默失效；② 错则写坏 profile 配置（破坏性）；
   ③ 错则 dryRun 看起来像已生效。
 
+### C-119 minihost 的 ctx 语义：服务按属性暴露、`effect` 立即执行、只隔离 DSH_HOME
+minihost 的目标是「让插件把接线跑完」，不是模拟 cordis。三条语义决定插件能不能起得来：
+
+① **服务按属性暴露**：`ctx.llm` 这类写法的服务必须能按属性取到（cordis 语义），
+   只在 `ctx.get(name)` 里给不够——插件写 `ctx.llm.registerAdapter(...)` 会拿到 `noop`，
+   在注册路由之前就抛 `TypeError`，表现为**端点全 404 而 apply 看起来成功**；
+   未提供的服务仍走 noop，`jobs`/`log` 刻意留空；
+② **`ctx.effect(fn)` 必须立即执行** `fn()` 并把返回值当 disposer：原本当 noop 时，
+   插件写在 `effect` 里的路由注册**全部丢失**（同上，全 404 但无报错）；
+③ **内置 `llm` 垫片**：`registerAdapter` 记录 `{providerIds, adapter}` 并往 warnings 推一行
+   「已注册适配器 …」供验收自证；`unregisterAdapter` 按 id 摘除；`resolveModelInfo` 返回
+   `{provider, model, context: undefined}`、`listModels` 返回 `[]`；其余方法由 Proxy 返回
+   `async () => undefined`。**垫片不转发请求、不解析模型**，只保证接线跑完；
+④ **隔离边界**：minihost 只把 `DSH_HOME` 隔离到 `.minihost/home-<port>`，
+   插件自有的数据根环境变量（如 `DSH_MODEL_TEAM_HOME`）**不在隔离范围内**——
+   验收时不显式传 `env` 就会读写**真实数据根**（实测：minihost 起的实例读到了真实 config 里的 2 个群）。
+   做破坏性验收前必须显式传 `env`。
+
+- 依据：`lib/core/minihost/host-child.mjs`（`createLlmShim` / `makeCtx` / `effect` 三处）。
+- 验证：本仓库测试 132/132；`dsh-model-team` 在 minihost 下 `/_team/meta` 返回 JSON、`/_team/groups` 200。
+- 违反后果：①② 错则插件「apply 成功但全 404」，且日志里看不出原因；④ 错则验收写坏真实配置。
+
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
 - 依据：`test/` 现有 11 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
