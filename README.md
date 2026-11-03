@@ -54,7 +54,8 @@ test_env      { action: "start", plugin: "<插件根>" }        // plugin 可空
 ui_check      { plugin: "<插件根>" }                         // write 可空，缺省 true
 ```
 
-`minihost` 的 `services` 可空，用于注入宿主服务；`env` 可空，用于覆盖子进程环境变量。
+`minihost` 的 `services` 可空，用于注入宿主服务（`webServer` / `tools` / `storageDomain` / `sessions` / `llm` 已内置宽容桩，
+`llm` 垫片会把 `registerAdapter` 的 providerIds 打进启动日志）；`env` 可空，用于覆盖子进程环境变量。
 `test_env` 的 `kind` 可空（test / clean），`root` 可空（环境根位置）。
 
 ### 环境修复与杂项

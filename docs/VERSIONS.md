@@ -4,6 +4,7 @@
 
 | 版本 | 变更 |
 | --- | --- |
+| 0.2.1 | `minihost` 内置 `llm` 垫片：`registerAdapter` 记录 providerIds 并在启动日志输出「已注册适配器 …」，`resolveModelInfo` / `listModels` 返回最小结构、其余方法 async noop（垫片不转发请求、不解析模型）。同时修两个让「服务注入了却仍 404」的垫片缺陷：`ctx` 只实现 `get()`、服务没挂成属性（插件写 `ctx.llm` 拿到 noop），`ctx.effect(fn)` 是 noop、回调从不执行（插件在 effect 里注册的路由全部丢失）。内置桩清单同步补 `llm`。 |
 | 0.2.0 | 新增 `github_mirror`：在 git 层写 `insteadOf` 重写（`url.<代理>https://<host>/.insteadOf https://<host>/`，**两端都必须带协议**——裸主机会让重写静默失效），让 DSH 通过 pnpm/git 安装 GitHub 插件时无痕走代理（「安装源」只管 npm 包，覆盖不到 git clone 这条链路）。`mirror` 可省：省略时按候选清单顺序探测、取第一个可用的，仅清单为空或全部停用才必填；探测不通的地址不写入候选清单，只在返回的 `rejected` 里告知；清单外置 `lib/core/github-mirror/candidates.json`，失败累加满 3 次自动停用、`probe` 可恢复；`apply` 先探测后写并自动轮换、`dryRun` 缺省 true、`clear` 只删受管站点规则。`sync_plugin` 新增 `hmr` 参数：幂等启用 profile 的模块热重载（补 `- id: hmr`、`base` 用版本无关表达式、`root` 含 `local-plugins`），并回报该插件是否已可免重启。修「改了代码但工具没换新」的根因：工具注册与两个 post-execute 钩子都把 disposer 交回 cordis（`inject` 回调是子 fiber，不返回 disposer 则热重载后旧注册永不释放、同名重注册被拒，工具一直指向旧闭包）。README 版本记录移至本文件。 |
 | 0.1.31 | 补齐读/写两条链路：`mark_read` 修 bash 解析——支持 `cmd < 文件` 重定向输入，并按**输出命中行**反推读过哪些文件（`grep -rn pat 目录` 以前只把目录当文件、静默跳过，现在目录里的文件也算已读）；`mark_edit` 兼管 **bash 写命令**（`> >> tee sed -i cp mv touch dd of=`）的目标文件，写入后同样多检查点补发稳定版本。返回里带 `stats` / `refreshEmits` 自证计数。 |
 | 0.1.30 | `mark_edit` 改为**全局生效**（与 `mark_read` 对称）：缺省开启，所有经 `write`/`edit` 改过的文件写完后延迟 `settleMs` 按稳定版本再补发一次观测，连续编辑不再需要重读——不再需要指定路径、不再维护清单；`paths` 只保留给「没走 write/edit 的改动」补标，`undo` 撤销补标，`enabled`/`settleMs` 改配置。 |
