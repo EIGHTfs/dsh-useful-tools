@@ -97,3 +97,4 @@ useful_tools      { action: "help" }                                     // acti
 - [契约](docs/CONTRACT.md)
 - [版本记录](docs/VERSIONS.md)
 - [未做事项](docs/NOT-DONE.md)
+- [使用摩擦清单](docs/使用摩擦清单.md)
