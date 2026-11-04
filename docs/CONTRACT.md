@@ -289,7 +289,7 @@ minihost 的目标是「让插件把接线跑完」，不是模拟 cordis。三�
    做破坏性验收前必须显式传 `env`。
 
 - 依据：`lib/core/minihost/host-child.mjs`（`createLlmShim` / `makeCtx` / `effect` 三处）。
-- 验证：本仓库测试 132/132；`dsh-model-team` 在 minihost 下 `/_team/meta` 返回 JSON、`/_team/groups` 200。
+- 验证：本仓库全量测试（`node test/run-tests.mjs`）全绿；`dsh-model-team` 在 minihost 下 `/_team/meta` 返回 JSON、`/_team/groups` 200。
 - 违反后果：①② 错则插件「apply 成功但全 404」，且日志里看不出原因；④ 错则验收写坏真实配置。
 
 ### C-120 `github_download` 只管下载通道，不改系统网络
@@ -312,9 +312,39 @@ minihost 的目标是「让插件把接线跑完」，不是模拟 cordis。三�
   全通道失败结构 / 失败学习回写；真实链路先 `dryRun=true` 看通道，再实际下一次小文件。
 - 违反后果：做成全局改写会污染所有 bash 调用；不删半截文件会让「下载失败」看起来像成功。
 
+### C-121 `sync_plugin` 的上游更新只按 blob sha 覆盖白名单内的变动文件
+
+装机版依赖（profile 声明成 `github:owner/repo`）的真实加载源常在 `node_modules/<插件>`，
+`local-plugins/` 下没有它，旧的同步逻辑对它无能为力。上游更新模式解决这个，纪律有五条。
+
+- **差异只由 git blob sha 判定**：远端 `git/trees/<ref>?recursive=1` 的 sha 与本地自算的
+  `sha1("blob <len>\0"+内容)` 同口径，零下载算出变动清单；
+  `truncated: true` 一律拒绝（半截清单会把「没列出的」误判成删除）。
+- **写之前先取齐并全部校验**：任一文件取不到或 sha 对不上，整体不落盘，不留半新半旧。
+  每个下载内容都要与远端 blob sha 比对，镜像给脏内容当场判失败。
+- **白名单筛「该装的文件」**：按远端 package.json 的 `files` 最小语义（精确名 / 目录 / 结尾斜杠 / `!` 否定；
+  顶层 package.json、README、LICENSE、CHANGELOG 始终包含），docs、test 这类不进插件目录；
+  glob 不实现，命中不了如实报告，不猜。
+- **要落盘必须 write:true，且覆盖前必备份**：旧文件按相对路径进 `<DSH_HOME>/useful-tools/upstream-backup/`，
+  更新记录进 `upstream-records/`（含 headSha 与每文件 sha）；单次变动文件数超上限直接拒绝（多半是 target 指错）。
+  `removed`（本地多余）只报告不删除——删除别人的运行时代码不由本工具自作主张。
+- **带 target 要做插件名防呆**：源与目标都读得到 `package.json.name` 且两者不同 ⇒ 拒绝，放行需显式 `allowMismatch:true`。
+  诱因是**宿主运行态闭包陈旧**——磁盘副本同步了，进程里的 `runSync` 还是启动时 import 的旧实现
+  （工具描述走 `useful_tools` 动态扫描所以是新的，`run` 链却是旧的）；旧实现认得 `target` 却不认得 `fromGithub`，
+  「更新装机版插件」会被静默降级成「拿本地源码覆盖那个插件」，只差一个 `write:true` 就出事（实测发生过，被 dryRun 救回）。
+  目标没有 package.json 时不拦——判据是「两边名字都在且冲突」，不对未知形态瞎猜。
+
+- 依据：`lib/core/plugin-sync/upstream.mjs`、`lib/core/plugin-sync/tools.js` 的 `resolveInstallTarget` / `runUpstreamSync` / `upstreamDataRoots` / `packageNameIn`。
+- 验证：`test/plugin-upstream.test.mjs` 用注入的 fetchImpl 全离线覆盖 sha 口径、白名单语义、
+  dryRun 不写盘、备份与记录落地、超限拒绝、truncated 拒绝、target 插件名冲突拦截与 `allowMismatch` 放行；
+  真实链路以 `MerkyorLynn/dsh-live-compact`（装机 1.0.5 / 上游 main）为对象跑过 dryRun 与沙箱真写各一次。
+- 违反后果：不等全部取齐就边下边写，插件会停在半新半旧状态直接崩在加载期；
+  不按白名单筛会把 1.2 MB 图片与测试灌进装机目录；不备份就无法回滚；
+  不做名字防呆则一次运行态陈旧闭包就能把 A 插件源码整份盖进 B 插件。
+
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
-- 依据：`test/` 现有 11 份测试（统一 `*.test.mjs`），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
+- 依据：`test/` 下的 `*.test.mjs`（份数随工具增删变化，以 `ls test/*.test.mjs | wc -l` 实测为准），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
 - 入口：`test/run-tests.mjs` 自己扫描 `*.test.mjs` 再把文件列表传给 `node --test`——不依赖 glob
   （Node 20 不支持 `--test` 的 glob，Windows 的 shell 也不展开通配符）。
 - CI：`.github/workflows/test.yml` **固定 `ubuntu-latest`** × Node 20/22/24 跑同一命令（零依赖，无需 npm install）。

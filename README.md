@@ -10,6 +10,7 @@ DSH 插件开发与日常使用的小工具集：读/写观测、插件体检、
 | 写后自动续期 | 写改后自动补发观测，连续编辑免重读 | `mark_edit` |
 | 快捷命令 | 定义并执行常用命令，定义持久保存 | `quick_command` |
 | 插件同步 | 同步代码到 profile 并对齐权限 | `sync_plugin` |
+| 上游更新 | 按 GitHub API 差异只覆盖装机目录的变动文件 | `sync_plugin` |
 | 插件体检 | 静态检查装载链路，逐段列出静默失败 | `verify_plugin` |
 | 前端模拟 | 生成并托管插件预览页 | `preview` |
 | 后端模拟 | 本地跑插件服务端代码 | `minihost` |
@@ -47,6 +48,8 @@ mark_edit  { settleMs: 1200 }                             // settleMs 可空；�
 ```jsonc
 sync_plugin   { write: true, register: true }              // write 必填才真写；register 可空
 sync_plugin   { write: true, hmr: true }                    // hmr 可空；true=启用热重载（缺省 dryRun 只报计划）
+sync_plugin   { target: "<目录>" }                          // target 可空；给了就同步到该目录（缺省 local-plugins 旧行为）
+sync_plugin   { fromGithub: "<owner/repo>", target: "<装机目录>" }  // 上游更新；不给 write 只报差异
 verify_plugin { plugin: "<插件根>" }                        // plugin 可空；省略则巡检所有已装插件
 minihost      { action: "start", plugin: "<插件根>" }        // action 可空，缺省 start
 preview       { action: "gen", plugin: "<插件根>" }          // spec 可空，省略则自动挂载
@@ -58,6 +61,11 @@ ui_check      { plugin: "<插件根>" }                         // write 可空�
 `minihost` 的 `services` 可空，用于注入宿主服务（`webServer` / `tools` / `storageDomain` / `sessions` / `llm` 已内置宽容桩，
 `llm` 垫片会把 `registerAdapter` 的 providerIds 打进启动日志）；`env` 可空，用于覆盖子进程环境变量。
 `test_env` 的 `kind` 可空（test / clean），`root` 可空（环境根位置）。
+`sync_plugin` 的 `target` 可空——给了就同步到该目录（校验存在且是目录），省略则沿用「DSH_HOME → local-plugins/<插件名>」旧行为。
+带 `target` 时比对源与目标各自 `package.json` 的 `name`，两边都有且不一致会拒绝（防止拿 A 插件源码覆盖 B 插件的运行时代码），确认无误再传 `allowMismatch: true`。
+`fromGithub` 给了就切换为上游更新模式，按 GitHub API 的 blob sha 与本地目录比对，只覆盖变动文件（不 clone、不落 .git、不动多余文件）；
+`ref` 可空（缺省远端默认分支）；返回的 `files` 只列变动文件，全量口径看 `totalCount` / `unchangedCount`；
+真写前自动把被覆盖的旧文件备份到 `<DSH_HOME>/useful-tools/upstream-backup/`，更新记录写 `upstream-records/`。
 
 ### 环境修复与杂项
 
