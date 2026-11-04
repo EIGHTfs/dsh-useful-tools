@@ -16,6 +16,7 @@ DSH 插件开发与日常使用的小工具集：读/写观测、插件体检、
 | 隔离实例 | 起独立 DSH，随便装随便崩 | `test_env` |
 | UI 骨架 | 静态解析 client.js，产出控件清单 | `ui_check` |
 | GitHub 代理 | 装 GitHub 插件时走代理 | `github_mirror` |
+| GitHub 下载 | 下载 GitHub 资源时自动选可用通道 | `github_download` |
 | CIFS 写入修复 | 修挂载盘上写文件报权限错误 | `patch_cifs_write` |
 | 工具清单 | 列出全部工具与排障索引 | `useful_tools` |
 
@@ -66,6 +67,10 @@ github_mirror     { action: "apply", mirror: "https://<代理>/" }         // �
 github_mirror     { action: "apply", dryRun: false }                    // 探测通过后真写入
 github_mirror     { action: "clear", dryRun: false }                    // 恢复直连
 github_mirror     { action: "probe" }                                   // 只探测，不写配置
+github_download   { url: "<GitHub 下载地址>" }                            // url 必填；channel 可空，缺省 auto
+github_download   { url: "<地址>", dryRun: true }                        // dryRun 可空；true=只探通道不下载
+github_download   { url: "<地址>", sha256: "<期望哈希>" }                  // sha256 可空；给了就校验
+github_download   { url: "<地址>", channel: "direct" }                   // channel 可空；direct/mirror 只走单一路径
 patch_cifs_write  { action: "check" }                                   // action 可空，缺省 check
 patch_cifs_write  { action: "apply", dryRun: false }                     // dryRun 缺省 true
 quick_command     { name: "logs", command: "tail -n 50 app.log" }        // name 必填
@@ -76,6 +81,10 @@ useful_tools      { action: "help" }                                     // acti
 `github_mirror` 的 `mirror` 可省——省略时按候选清单顺序自动取第一个可用的；仅当清单为空或全部停用才必须传。
 `hosts` 可空（缺省 `github.com`）；`rotate` 可空（缺省 true，探测失败换下一个候选）。
 探测不通的地址不会被写进候选清单，只在返回的 `rejected` 里告知。
+`github_download` 的 `channel` 可空（`auto` 缺省：先探直连，不通再按候选清单轮换镜像；`direct` / `mirror` 只走单一路径）；
+`savePath` 可空（缺省 `<cwd>/<URL 文件名>`），`cwd`、`mirror`、`timeoutMs` 可空；
+`dryRun: true` 返回直连与各镜像的探测结果及推荐通道。
+它只管「通过本工具下载」这条路径——用 bash 手敲 `curl` 不会被改写。
 `patch_cifs_write` 的 `apply` / `revert` 需显式传 `dryRun: false` 才落盘。
 `quick_command` 的 `cwd` 可空，省略则沿用宿主进程工作目录。
 

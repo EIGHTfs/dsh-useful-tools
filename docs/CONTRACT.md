@@ -12,7 +12,7 @@
 ### C-101 目录即工具名
 `lib/shared/<名字>/index.js` 一个目录 = 一个工具，注册名就是 `<名字>`（不带前缀、不做驼峰转换）。
 - 依据：`lib/index.js` 的 `listToolDirs()` 扫 `lib/shared/*/index.js`，`name` 取目录名。
-- 验证：`ls lib/shared/` 与工具清单逐项对照；当前应为 `mark_read` / `sync_plugin` / `minihost` / `preview` / `verify_plugin` / `test_env`。
+- 验证：`ls lib/shared/` 与 `useful_tools list` 的输出逐项对照，两者必须一致（本文件不列具体名字，避免随工具增删而漂移）。
 - 违反后果：调用方按文档名字调不到工具（历史上 `tool_` / `ut_` 前缀就是这么对不上的）。
 
 ### C-102 一个文件夹一个工具，多动作走 `action`
@@ -291,6 +291,26 @@ minihost 的目标是「让插件把接线跑完」，不是模拟 cordis。三�
 - 依据：`lib/core/minihost/host-child.mjs`（`createLlmShim` / `makeCtx` / `effect` 三处）。
 - 验证：本仓库测试 132/132；`dsh-model-team` 在 minihost 下 `/_team/meta` 返回 JSON、`/_team/groups` 200。
 - 违反后果：①② 错则插件「apply 成功但全 404」，且日志里看不出原因；④ 错则验收写坏真实配置。
+
+### C-120 `github_download` 只管下载通道，不改系统网络
+
+`github_download` 解决「直连 `release-assets.githubusercontent.com`（Release 资产的 302
+落地域）被 TLS SNI 阻断」：做法是「直连优先、不通轮换镜像前缀」，候选清单复用
+`github_mirror` 的 `candidates.json` 与失败学习（连续失败 3 次自动停用）。
+
+- **只覆盖「通过本工具下载」这条路径**。用 bash 手敲 `curl` / `wget` 不会被改写——
+  工具不做 shell 注入、不写 `BASH_ENV`、不装本地代理。
+- **不做系统级拦截**：镜像不是标准 HTTP 代理（不理解 `CONNECT`），全局接管只能靠 MITM，
+  代价是整机根证书加一个常驻进程，且证书轮换失败会让所有 HTTPS 一起挂，不在本插件职责内。
+- **通道选择以实测为准**，不按资源类型硬编码结论；`directHint` 只在 `dryRun` 报告里解释原因。
+- **失败必须删掉半截文件**（文件存在且非零会被后续步骤误判成下载成功）；
+  传了 `sha256` 就校验，不匹配即判失败并删文件。
+- 探测镜像时拿到响应头即断开 body：实测 `ghfast.top` 不透传 `Range`，
+  用 `Range` 探测会把整个文件拉下来。
+- 依据：`lib/core/github-download/{index.js,channels.js}`、`lib/shared/github_download/index.js`。
+- 验证：`test/github-download.test.mjs` 覆盖 URL 分类 / 前缀拼接 / 下载落盘 / sha256 校验 /
+  全通道失败结构 / 失败学习回写；真实链路先 `dryRun=true` 看通道，再实际下一次小文件。
+- 违反后果：做成全局改写会污染所有 bash 调用；不删半截文件会让「下载失败」看起来像成功。
 
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
