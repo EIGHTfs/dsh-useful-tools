@@ -142,9 +142,10 @@ CIFS 等挂载上 chmod/chown 失败只记录、不中断同步，也不假装�
 ---
 
 ### C-114 DSH 插件规则两边同源维护，但实现不耦合
-同一套 DSH 插件规则存在两处，判定语义必须一致：
-- `dsh-git-push` 的 `lib/audit-rules/audit-rules-dsh.yml`（提交审计，逐行扫描改动）
-- 本插件 `lib/core/verify-plugin/dsh-rules.mjs`（`verify_plugin`，整仓扫描）
+同一套 DSH 插件规则（11 条）存在两处，判定语义必须一致：
+- `dsh-git-push`：9 条在 `lib/audit-rules/audit-rules-dsh.yml`（逐行），2 条在
+  `scripts/audit-ext/dsh-inject-declarations.mjs`（脚本扩展，因为要跨行读 inject 声明）
+- 本插件 `lib/core/verify-plugin/dsh-rules.mjs`（`verify_plugin`，整仓扫描，11 条同一实现）
 
 约束：
 ① 两个插件**不得互相 import**（各自独立实现，避免耦合与加载顺序问题）；
@@ -154,10 +155,14 @@ CIFS 等挂载上 chmod/chown 失败只记录、不中断同步，也不假装�
 ⑤ **匹配只针对真实代码**：匹配前把注释与字符串内容遮蔽成等长空格（行号不变），
   所以规则的 `message`/说明里写出违规写法（否则说不清规则是什么）不会触发规则自身；
   模块名类规则（`from 'cordis'`、`require('fs')`）走「遮蔽视图确认 import/require 结构 → 回原文核对模块名」；
-⑥ 跳过规则定义文件本身（`dsh-rules.mjs`）。
-- 依据：`lib/core/verify-plugin/dsh-rules.mjs` 的 `DSH_RULES`、`maskCode`、`stringArgHits`。
-- 验证：`test/dsh-rules.test.mjs` 断言 9 条规则 id 与 git-push 一致、每条有正例与关键负例，
-  并含自指回归（说明文案/注释里的违规写法不产生 finding）与反向验证（真实代码仍报错）。
+⑥ 跳过规则定义文件本身（`dsh-rules.mjs`）；
+⑦ **`dsh/ctx-service-not-injected` 的保守边界**（宁漏勿误，`ctx` 是极常见参数名）：
+  只检查**插件入口文件**（含 `export function apply` 或 `export const inject`），
+  且只报**已知 cordis 服务名**（`KNOWN_CORDIS_SERVICES`），并跳过内建成员与已知错误字段名。
+- 依据：`lib/core/verify-plugin/dsh-rules.mjs` 的 `DSH_RULES`、`maskCode`、`stringArgHits`、`KNOWN_CORDIS_SERVICES`。
+- 验证：`test/dsh-rules.test.mjs` 断言 11 条规则 id、每条有正例与关键负例，
+  并含自指回归（说明文案/注释里的违规写法不产生 finding）与反向验证（真实代码仍报错）；
+  零误报基线：对 6 个真实插件跑 `verify_plugin`，两条新增规则命中数必须为 0。
 - 违反后果：两份实现漂移会让「审计放行、工具报错」或反之，开发者不知道该信哪个；
   匹配不遮蔽文案则规则会被自己的说明触发，产生「插件没这个毛病却报错」的假阳性。
 

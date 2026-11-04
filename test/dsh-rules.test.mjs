@@ -22,19 +22,46 @@ function makePlugin(files) {
   return dir;
 }
 
-test('规则表与 git-push 的 9 条规则一一对应', () => {
+test('规则表与 git-push 的 9 条规则一一对应（另有 2 条本项目新增）', () => {
   const ids = DSH_RULES.map((r) => r.id).sort();
   assert.deepEqual(ids, [
     'dsh/client-module-loader-id',
     'dsh/client-node-builtin-require',
+    'dsh/ctx-service-not-injected',
     'dsh/ctx-undeclared-property-read',
     'dsh/host-api-guessed-fallback-chain',
     'dsh/import-bare-cordis',
     'dsh/import-bare-schemastery',
     'dsh/patch-insert-unique-id',
+    'dsh/plugin-default-export-hides-inject',
     'dsh/schema-secret-field-role',
     'dsh/tool-render-empty-body',
   ]);
+});
+
+test('服务注入：未声明 inject 就访问 ctx.服务 命中；声明了或走 ctx.get 不误报', () => {
+  const dir = makePlugin({
+    'lib/bad.js': 'export function apply(ctx) { ctx?.llm.registerAdapter([], {}); }',
+    'lib/good.js': 'export const inject = ["llm"];\nexport function apply(ctx) { ctx.llm.registerAdapter([], {}); }',
+    'lib/nested.js': 'export const inject = [{ required: ["credentials"], optional: ["llm"] }];\nexport function apply(ctx) { ctx.llm.x(); }',
+    'lib/builtin.js': 'export function apply(ctx) { ctx.on("x", () => {}); const llm = ctx.get("llm"); ctx.logger.info(1); }',
+  });
+  try {
+    const hits = checkDshRules({ root: dir }).hits.filter((h) => h.rule === 'dsh/ctx-service-not-injected');
+    assert.deepEqual(hits.map((h) => h.file).sort(), ['lib/bad.js']);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('入口导出面：default 与命名 inject/apply 并存时命中（DSH 取 default 会丢 inject）', () => {
+  const dir = makePlugin({
+    'lib/bad-entry.js': 'export const inject = ["llm"];\nexport async function apply(ctx) {}\nexport default apply;',
+    'lib/good-entry.js': 'export const inject = ["llm"];\nexport async function apply(ctx) {}',
+    'lib/plain.js': 'export default function whatever(ctx) {}',
+  });
+  try {
+    const hits = checkDshRules({ root: dir }).hits.filter((h) => h.rule === 'dsh/plugin-default-export-hides-inject');
+    assert.deepEqual(hits.map((h) => h.file), ['lib/bad-entry.js']);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('裸名导入：cordis / schemastery 各命中，scoped 包不误报', () => {
