@@ -59,7 +59,7 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 与主实例完全隔离。**环境根不写死**，优先级：参数 `root` > 环境变量 `DSH_TEST_ENV_ROOT` > 插件配置
 `<DSH_HOME>/useful-tools/config.json` 的 `testEnvRoot` > 推算（`DSH_WORKSPACE` / `DSH_HOME` 上一级「工作区」）。
 `sync_plugin` 的 `dshHome` 同样缺省为当前实例（`process.env.DSH_HOME`），传环境目录即可把插件装进隔离实例。
-- 依据：`lib/core/test-env/index.js` 的 `envRoot` / `readPluginConfig` / `detectDshVersion` / `startEnv`；`lib/core/plugin-sync/tools.js` 的 `registerPlugin`。
+- 依据：`lib/core/test-env/index.js` 的 `envRoot` / `readPluginConfig` / `detectDshVersion` / `startEnv`；`lib/core/sync-plugin/tools.js` 的 `registerPlugin`。
 - 验证：配置 `testEnvRoot` 后 `test_env { action: "status" }` 的 `root` 应等于该配置；`test_env { action: "start" }` 返回 `ready:true` 与端口；`sync_plugin { write:true, register:true, dshHome:"<环境目录>" }` 后该环境 profile 的 `dependencies` 与 `dsh.profile.bundles` 均含插件名。
 - 违反后果：测试实例与主实例共用 home/端口，测试崩了会污染生产；或路径写死导致换机不可用。
 
@@ -135,7 +135,7 @@ mock `window.__ModuleLoader__` / `require` / `ctx`（slots / locale / effect）�
 
 `sync_plugin` 写盘后的权限/属主对齐与读权限自检属于**副作用收尾**：只改权限位与属主，不改文件内容；
 CIFS 等挂载上 chmod/chown 失败只记录、不中断同步，也不假装成功。
-- 依据：`lib/core/verify-plugin/{inject,activation,deps}.mjs`、`lib/core/plugin-sync/permissions.mjs`。
+- 依据：`lib/core/verify-plugin/{inject,activation,deps}.mjs`、`lib/core/sync-plugin/permissions.mjs`。
 - 验证：`test/verify-enhance.test.mjs` 覆盖 inject 近似建议、激活三项缺失、依赖 `file:` 失效、权限对齐、`dshBin` wrapper 解析。
 - 违反后果：把「离线推断」说成「运行期实测」会误导排查方向；权限静默失败会再次变成「装了不激活」。
 
@@ -262,7 +262,7 @@ DSH 从 GitHub 安装插件走 `pnpm add <git spec>` → git clone（`plugin-man
 ③ **`changed` 仅表示已落盘**：dryRun 只填 `plan`，不得谎报已改（否则调用方以为生效）；
    重复执行必须逐字节幂等；
 ④ `hmr: true` 且未传 `write` 时只报计划；`hmr` 缺省完全不碰配置文件。
-- 依据：`lib/core/plugin-sync/hmr-config.mjs`（`readHmrConfig` / `ensureHmrConfig` / `rebuildHmrBlock`），
+- 依据：`lib/core/sync-plugin/hmr-config.mjs`（`readHmrConfig` / `ensureHmrConfig` / `rebuildHmrBlock`），
   `install.mjs` 的 `readHmrConfig` 转调它、`judgeHmr` 负责布局判定。
 - 验证：`test/sync-plugin-install.test.mjs` 中 ensureHmrConfig 六例——含五种入口形态写盘后的**结构断言**
   （root/base 键唯一、列表项更深缩进、其它键不丢）、二次执行逐字节不变、
@@ -334,7 +334,7 @@ minihost 的目标是「让插件把接线跑完」，不是模拟 cordis。三�
   「更新装机版插件」会被静默降级成「拿本地源码覆盖那个插件」，只差一个 `write:true` 就出事（实测发生过，被 dryRun 救回）。
   目标没有 package.json 时不拦——判据是「两边名字都在且冲突」，不对未知形态瞎猜。
 
-- 依据：`lib/core/plugin-sync/upstream.mjs`、`lib/core/plugin-sync/tools.js` 的 `resolveInstallTarget` / `runUpstreamSync` / `upstreamDataRoots` / `packageNameIn`。
+- 依据：`lib/core/sync-plugin/upstream.mjs`、`lib/core/sync-plugin/tools.js` 的 `resolveInstallTarget` / `runUpstreamSync` / `upstreamDataRoots` / `packageNameIn`。
 - 验证：`test/plugin-upstream.test.mjs` 用注入的 fetchImpl 全离线覆盖 sha 口径、白名单语义、
   dryRun 不写盘、备份与记录落地、超限拒绝、truncated 拒绝、target 插件名冲突拦截与 `allowMismatch` 放行；
   真实链路以 `MerkyorLynn/dsh-live-compact`（装机 1.0.5 / 上游 main）为对象跑过 dryRun 与沙箱真写各一次。

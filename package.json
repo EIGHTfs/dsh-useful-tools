@@ -36,7 +36,7 @@
     "dsh",
     "dsh-plugin",
     "mark-read",
-    "plugin-sync",
+    "sync-plugin",
     "minihost",
     "preview",
     "test-env"

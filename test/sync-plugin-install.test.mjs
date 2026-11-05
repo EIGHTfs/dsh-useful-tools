@@ -13,8 +13,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { dshRootOf, readHmrConfig, judgeHmr, planInstall, applyInstall, depHints, pickProfile, inspectProfiles } from '../lib/core/plugin-sync/install.mjs';
-import { ensureHmrConfig } from '../lib/core/plugin-sync/hmr-config.mjs';
+import { dshRootOf, readHmrConfig, judgeHmr, planInstall, applyInstall, depHints, pickProfile, inspectProfiles } from '../lib/core/sync-plugin/install.mjs';
+import { ensureHmrConfig } from '../lib/core/sync-plugin/hmr-config.mjs';
 
 /** 造一个假 DSH_HOME：<tmp>/.dsh/profiles/web（withDsh=false 时目录结构只到 <tmp>/profiles/web）。 */
 function fakeHome({ profile = 'web' } = {}) {

@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { parseInsertLines, checkActivation } from '../lib/core/verify-plugin/activation.mjs';
 import { checkInjectNames, extractPluginInject } from '../lib/core/verify-plugin/inject.mjs';
 import { checkDeps } from '../lib/core/verify-plugin/deps.mjs';
-import { alignPermissions, verifyReadable } from '../lib/core/plugin-sync/permissions.mjs';
+import { alignPermissions, verifyReadable } from '../lib/core/sync-plugin/permissions.mjs';
 import { resolveDshEntry, logHints } from '../lib/core/test-env/index.js';
 
 test('parseInsertLines：只认 insert 块内的 id/name', () => {

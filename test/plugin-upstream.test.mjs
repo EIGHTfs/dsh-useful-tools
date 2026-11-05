@@ -17,15 +17,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
-import { syncPlugin } from '../lib/core/plugin-sync/sync-plugin.mjs';
-import { runSync } from '../lib/core/plugin-sync/tools.js';
+import { syncPlugin } from '../lib/core/sync-plugin/sync-plugin.mjs';
+import { runSync } from '../lib/core/sync-plugin/tools.js';
 import {
   applyUpstream,
   blobSha,
   diffUpstream,
   isIncludedByFiles,
   parseGithubRepo,
-} from '../lib/core/plugin-sync/upstream.mjs';
+} from '../lib/core/sync-plugin/upstream.mjs';
 
 function tempDir(prefix) {
   return mkdirSync(join(tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`), { recursive: true });
