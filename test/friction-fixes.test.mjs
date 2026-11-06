@@ -86,6 +86,41 @@ test('listStaleFiles：报出源码没有的文件，tools/ 下的标记为受�
   }
 });
 
+test('listStaleFiles：源码里有但不在同步白名单的文件不算残留', () => {
+  const source = tempDir('stale-src');
+  const target = tempDir('stale-dst');
+  try {
+    mkdirSync(join(target, 'assets'), { recursive: true });
+    writeFileSync(join(source, '.gitignore'), 'node_modules\n');
+    writeFileSync(join(target, '.gitignore'), 'node_modules\n');
+    writeFileSync(join(target, 'assets', 'old.html'), 'stale\n');
+
+    // 不传 sourceRoot：.gitignore 也会被当成残留
+    assert.equal(listStaleFiles(target, []).some((s) => s.path === '.gitignore'), true);
+    // 传了 sourceRoot：源码里存在 → 只是不同步，不是残留
+    const stale = listStaleFiles(target, [], source);
+    assert.deepEqual(stale.map((s) => s.path), ['assets/old.html']);
+  } finally {
+    rmSync(source, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test('listStaleFiles：运行期日志与 .preview 目录不进残留清单', () => {
+  const dir = tempDir('stale-noise');
+  try {
+    mkdirSync(join(dir, '.preview'), { recursive: true });
+    writeFileSync(join(dir, '.preview', 'preview-31120.log'), 'log\n');
+    writeFileSync(join(dir, 'minihost-31101.log'), 'log\n');
+    writeFileSync(join(dir, 'real-leftover.js'), 'old\n');
+
+    const stale = listStaleFiles(dir, []);
+    assert.deepEqual(stale.map((s) => s.path), ['real-leftover.js'], '日志与运行期目录属于噪音');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('listStaleFiles：目标目录不存在时返回空数组，不抛', () => {
   assert.deepEqual(listStaleFiles('/tmp/definitely-not-exist-' + Date.now(), []), []);
 });
