@@ -390,6 +390,31 @@ core 里成立的能力，工具层必须能触达；否则使用者只有两条
 - 验证：`test/friction-fixes.test.mjs` 断言 minihost 工具层暴露 `env`/`force`/`preview`/`all` 且 `env` 说明里含 `DSH_HOME`。
 - 违反后果：少数人绕路、多数人误判；能力明明存在却「用了没反应」，排查方向直接跑偏。
 
+### C-124 依赖体检的解析基准必须与插件运行时一致
+
+判「某个依赖能不能解析」，判据不能由体检方自选，必须复刻 Node 运行插件时的查找顺序。
+插件代码在 `<profile>/local-plugins/<插件>` 里，它 `import` 时 Node 从**那个目录**向上找，
+所以 `<插件>/node_modules/<name>`（嵌套依赖）是最常见且完全合法的位置。
+
+历史误报：`checkDeps` 只从 profile 根解析，把「装在插件自己 `node_modules` 里的依赖」
+一律报成缺失——某插件每次同步都出现 `tree-sitter-wasms 0.1.13 找不到`，
+实际它在 `local-plugins/<插件>/node_modules/` 下，运行时一切正常。
+同一个根因还牵连 `web-tree-sitter`，属于**系统性地冤枉一整类依赖**。
+
+纪律：
+
+- **判定顺序**：插件内 `node_modules` → profile 顶层 `node_modules` → 从插件位置做 Node 解析。
+  三层都失败才算缺失。
+- **调用方必须传插件在部署端的实际目录**（`targetDir`）；不传就退化为按 profile 根解析，
+  此时应给出「可能误报嵌套依赖」的提示，而不是静默给结论。
+- **`optionalDependencies` 缺席不算失败**——它们本就被允许不安装。
+- 缺失原因要写清「哪些位置查过了」，否则使用者无法判断是真缺还是判定口径错了。
+
+- 依据：`lib/core/verify-plugin/deps.mjs` 的 `checkDeps`、`lib/core/sync-plugin/sync-plugin.mjs`、`lib/core/verify-plugin/check.mjs`。
+- 验证：`test/verify-enhance.test.mjs` 两条——嵌套依赖不误报（并对照旧行为确实会误报）、可选依赖缺席不算失败；
+  真实对照：同一插件修复前报 2 个缺失、修复后 0 个。
+- 违反后果：每次同步都出现一条不实的缺失告警，久了没人再看这个字段——真正的 `file:` 失效会被这条噪音盖住。
+
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
 - 依据：`test/` 下的 `*.test.mjs`（份数随工具增删变化，以 `ls test/*.test.mjs | wc -l` 实测为准），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。

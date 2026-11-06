@@ -75,6 +75,54 @@ test('extractPluginInject：认 export const inject 与 ctx.inject', () => {
   assert.deepEqual(names.sort(), ['fs', 'locale', 'tools']);
 });
 
+test('checkDeps：装在插件自己 node_modules 里的嵌套依赖不算缺失', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deps-nested-'));
+  try {
+    const plugin = join(dir, 'plugin');
+    const profile = join(dir, 'profile');
+    // 部署副本形态：<profile>/local-plugins/<插件>，依赖嵌套在插件自己目录里
+    const deployed = join(profile, 'local-plugins', 'demo');
+    mkdirSync(join(deployed, 'node_modules', 'nested-dep'), { recursive: true });
+    // 部署副本一定带 package.json（缺了就不算有效部署位置，判定会退化为 profile 根）
+    writeFileSync(join(deployed, 'package.json'), JSON.stringify({ name: 'demo', dependencies: { 'nested-dep': '0.1.13' } }));
+    writeFileSync(join(deployed, 'node_modules', 'nested-dep', 'package.json'), JSON.stringify({ name: 'nested-dep', version: '0.1.13' }));
+    writeFileSync(join(deployed, 'node_modules', 'nested-dep', 'index.js'), 'module.exports = 1;\n');
+    mkdirSync(plugin, { recursive: true });
+    writeFileSync(join(plugin, 'package.json'), JSON.stringify({ name: 'demo', dependencies: { 'nested-dep': '0.1.13' } }), 'utf8');
+
+    // 传 targetDir：按插件实际位置解析 → 命中嵌套依赖，不该报缺失
+    const fixed = checkDeps({ pluginRoot: plugin, profileDir: profile, targetDir: deployed });
+    assert.equal(fixed.ok, true, `嵌套依赖被误报：${JSON.stringify(fixed.missing)}`);
+    assert.equal(fixed.missing.length, 0);
+
+    // 对照：不给 targetDir 时按 profile 根解析，认不出嵌套依赖（这是旧误报的来源）
+    const old = checkDeps({ pluginRoot: plugin, profileDir: profile });
+    assert.equal(old.missing[0].name, 'nested-dep');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkDeps：optionalDependencies 缺席不算失败', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deps-opt-'));
+  try {
+    const plugin = join(dir, 'plugin');
+    const profile = join(dir, 'profile');
+    mkdirSync(plugin, { recursive: true });
+    mkdirSync(profile, { recursive: true });
+    writeFileSync(join(plugin, 'package.json'), JSON.stringify({
+      name: 'demo',
+      dependencies: { 'opt-dep': '1.0.0' },
+      optionalDependencies: { 'opt-dep': '1.0.0' },
+    }), 'utf8');
+    const r = checkDeps({ pluginRoot: plugin, profileDir: profile });
+    assert.equal(r.ok, true, '可选依赖允许缺席');
+    assert.match(r.notes.join(' '), /可选依赖/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkDeps：无依赖通过；file: 路径不存在报缺失', () => {
   const dir = mkdtempSync(join(tmpdir(), 'deps-'));
   try {
