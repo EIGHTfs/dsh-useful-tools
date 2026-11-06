@@ -52,14 +52,24 @@ sync_plugin   { target: "<目录>" }                          // target 可空�
 sync_plugin   { fromGithub: "<owner/repo>", target: "<装机目录>" }  // 上游更新；不给 write 只报差异
 verify_plugin { plugin: "<插件根>" }                        // plugin 可空；省略则巡检所有已装插件
 minihost      { action: "start", plugin: "<插件根>" }        // action 可空，缺省 start
+minihost      { action: "start", plugin: "<根>", env: "{\"KEY\":\"V\"}" }  // env 可空；注入子进程环境变量
+minihost      { action: "start", plugin: "<根>", force: true }             // force 可空；已有实例时重启
+minihost      { action: "start", plugin: "<根>", preview: "<html>" }       // preview 可空；根路径直出该页
+minihost      { action: "stop", all: true }                                // all 可空；停本进程启动的全部实例
+minihost      { action: "list", all: true }                                // all 可空；缺省只列本进程起的
 preview       { action: "gen", plugin: "<插件根>" }          // spec 可空，省略则自动挂载
+preview       { action: "gen", plugin: "<根>", spec: "{\"title\":\"t\"}" }  // spec 可传 inline JSON，不必先落文件
 preview       { action: "serve", file: "<预览页>" }          // backend 可空，省略则接最近一次 minihost
 test_env      { action: "start", plugin: "<插件根>" }        // plugin 可空，省略则起裸环境
 ui_check      { plugin: "<插件根>" }                         // write 可空，缺省 true
 ```
 
 `minihost` 的 `services` 可空，用于注入宿主服务（`webServer` / `tools` / `storageDomain` / `sessions` / `llm` 已内置宽容桩，
-`llm` 垫片会把 `registerAdapter` 的 providerIds 打进启动日志）；`env` 可空，用于覆盖子进程环境变量。
+`llm` 垫片会把 `registerAdapter` 的 providerIds 打进启动日志）；`env` 可空，用于覆盖子进程环境变量（默认 `DSH_HOME` 已隔离）；
+`force` 可空，true = 已有实例时按新参数重启；`preview` 可空，给 HTML 路径让根路径直出该页；
+`all` 可空：`list` 缺省只列本进程启动的实例，`all: true` 才列全部（外来实例带 `foreign: true`），`stop` 的 `all: true` 只停本进程启动的。
+`preview gen` 的 `spec` 可空（缺省用插件内 `assets/preview.spec.mjs`，没有则自动挂载），也可直接传 inline JSON 对象或文本；
+产物落在插件目录且未被 `.gitignore` 忽略时，返回 `artifactRisk: true` 并给出两条出路。
 `test_env` 的 `kind` 可空（test / clean），`root` 可空（环境根位置）。
 `sync_plugin` 的 `target` 可空——给了就同步到该目录（校验存在且是目录），省略则沿用「DSH_HOME → local-plugins/<插件名>」旧行为。
 带 `target` 时比对源与目标各自 `package.json` 的 `name`，两边都有且不一致会拒绝（防止拿 A 插件源码覆盖 B 插件的运行时代码），确认无误再传 `allowMismatch: true`。
@@ -67,6 +77,7 @@ ui_check      { plugin: "<插件根>" }                         // write 可空�
 `ref` 可空（缺省远端默认分支）；返回的 `files` 只列变动文件，全量口径看 `totalCount` / `unchangedCount`；
 真写前自动把被覆盖的旧文件备份到 `<DSH_HOME>/useful-tools/upstream-backup/`，更新记录写 `upstream-records/`。
 同步保留源文件的可执行位；用户目录里源码没有的文件（如 `tools/` 下由部署方提供的二进制）权限不改，回执 `preservedExternal` 如实计数。
+`stale` 列出「目标里有、源码没有」的残留（改名或删文件后的历史遗留），只报告不删除；`tools/` 与 `tool/` 下的条目标 `protected: true`。
 
 ### 环境修复与杂项
 

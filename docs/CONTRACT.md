@@ -365,6 +365,31 @@ minihost 的目标是「让插件把接线跑完」，不是模拟 cordis。三�
 - 违反后果：插件 `tools/` 下的外部二进制被改成 644，下游只报「文件存在但不可执行」，
   功能静默失效且极难回溯到同步这一步；反向做错（给所有文件补 x）则是安全面扩大。
 
+### C-123 工具层能力不得少于 core 已支持的能力
+
+工具层（`lib/shared/<工具>/index.js` 的 `parameters` + 分派）是 core 的**入口**，不是 core 的子集。
+core 里成立的能力，工具层必须能触达；否则使用者只有两条路——绕开工具直接调 core（于是各人各写一套），
+或者照着提示传一个工具层根本不接收的参数（于是「传了没反应」）。
+
+历史教训（同一份清单里 4 条同源）：
+
+- core 支持 `args.env`，工具层 schema 没有 → 想给 mini 宿主换数据根做隔离验证，只能绕开工具跑 `host.mjs`
+- core 支持 `force` 且提示文案让人「传 force:true」，工具层 schema 没有 → 照做的结果是参数被丢弃、行为不变
+- core/CLI 支持 `--preview`，工具层没有 → 想「一个进程里既有真后端又有真前端」得另起一个服务再手工接线
+- 台账不记启动者 → 多会话共用一台机器时，`list` 看不出哪个实例是自己的，清理孤儿只能 `ps | grep`
+
+纪律：
+
+- **新增 core 参数时，同一提交里检查工具层是否需要暴露**；不需要就在工具描述里写明「该能力工具层不提供，原因 X」。
+- **提示文案不得指向工具层不存在的参数**——这类不一致比缺功能更坏，因为它主动误导。
+- **「全停」类便捷操作必须限定在自己的归属范围内**（如 `stop all` 只停本进程启动的），
+  跨归属的操作只能按显式标识（port / plugin）执行，避免误杀他人实例。
+- 刻意不做的能力（如浏览器内核探测属别的插件职责）要写进文档并给出理由，不留给下一个人重新踩。
+
+- 依据：`lib/shared/{minihost,preview,sync_plugin}/index.js` 的 `parameters`、`lib/core/minihost/tools.js` 的分派与台账、`docs/使用摩擦清单.md`。
+- 验证：`test/friction-fixes.test.mjs` 断言 minihost 工具层暴露 `env`/`force`/`preview`/`all` 且 `env` 说明里含 `DSH_HOME`。
+- 违反后果：少数人绕路、多数人误判；能力明明存在却「用了没反应」，排查方向直接跑偏。
+
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
 - 依据：`test/` 下的 `*.test.mjs`（份数随工具增删变化，以 `ls test/*.test.mjs | wc -l` 实测为准），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
