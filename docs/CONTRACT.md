@@ -386,7 +386,7 @@ core 里成立的能力，工具层必须能触达；否则使用者只有两条
   跨归属的操作只能按显式标识（port / plugin）执行，避免误杀他人实例。
 - 刻意不做的能力（如浏览器内核探测属别的插件职责）要写进文档并给出理由，不留给下一个人重新踩。
 
-- 依据：`lib/shared/{minihost,preview,sync_plugin}/index.js` 的 `parameters`、`lib/core/minihost/tools.js` 的分派与台账、`docs/使用摩擦清单.md`。
+- 依据：`lib/shared/{minihost,preview,sync_plugin}/index.js` 的 `parameters`、`lib/core/minihost/tools.js` 的分派与台账。
 - 验证：`test/friction-fixes.test.mjs` 断言 minihost 工具层暴露 `env`/`force`/`preview`/`all` 且 `env` 说明里含 `DSH_HOME`。
 - 违反后果：少数人绕路、多数人误判；能力明明存在却「用了没反应」，排查方向直接跑偏。
 
