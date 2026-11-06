@@ -66,6 +66,7 @@ ui_check      { plugin: "<插件根>" }                         // write 可空�
 `fromGithub` 给了就切换为上游更新模式，按 GitHub API 的 blob sha 与本地目录比对，只覆盖变动文件（不 clone、不落 .git、不动多余文件）；
 `ref` 可空（缺省远端默认分支）；返回的 `files` 只列变动文件，全量口径看 `totalCount` / `unchangedCount`；
 真写前自动把被覆盖的旧文件备份到 `<DSH_HOME>/useful-tools/upstream-backup/`，更新记录写 `upstream-records/`。
+同步保留源文件的可执行位；用户目录里源码没有的文件（如 `tools/` 下由部署方提供的二进制）权限不改，回执 `preservedExternal` 如实计数。
 
 ### 环境修复与杂项
 

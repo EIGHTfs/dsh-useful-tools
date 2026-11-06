@@ -342,6 +342,29 @@ minihost 的目标是「让插件把接线跑完」，不是模拟 cordis。三�
   不按白名单筛会把 1.2 MB 图片与测试灌进装机目录；不备份就无法回滚；
   不做名字防呆则一次运行态陈旧闭包就能把 A 插件源码整份盖进 B 插件。
 
+### C-122 同步必须保住可执行位，且不替部署侧独有文件决定权限
+
+同步的价值是「让部署副本等于源码」，不是「把部署副本里的一切统一成源码的样子」。
+差别落在两类文件上：源码里有可执行文件的，同步后必须还是可执行；
+源码里没有、由部署方提供的（典型是插件根 `tools/` 下被 git 忽略的二进制），同步**无权**改它的 mode。
+
+- **复制阶段按源 mode 补权限**：CIFS/SMB 上 `copyFileSync` 必然 EPERM，回退分支用
+  `readFile+writeFile` 新建文件只拿到 umask 默认值（通常 644），源侧 `+x` 会静默丢失。
+  所以 `copyFileCompat` 复制成功后读源 mode，源带可执行位就给目标补 755；
+  源不带则不动，交给统一策略 —— 免得把源侧 `600` 这类私有位扩散到目标。
+- **对齐阶段以源为准，源缺失则跳过**：`alignPermissions` 收 `sourceRoot`。
+  源里存在该文件 → 按源 mode（可执行 755，否则 644）；
+  源里不存在 → **不动 mode**，只对齐属主，并计入 `preservedExternal` 写进 `notes`。
+  不传 `sourceRoot` 的老调用保持「按目标现状推断」，但那正是把丢失的 644 固化成 644 的成因，新调用一律要传。
+- **不能靠「目标当前有没有 x」推断**：复制失败留下的 644 与「本来就该是 644」在目标侧不可区分，
+  按现状判断等于把一次意外永久化。判定依据必须来自源或部署方，不能来自被同步对象自己。
+- **dryRun 完全不碰权限**：预演只报会写哪些文件，不动 mode。
+- 依据：`lib/core/sync-plugin/fsx.js` 的 `copyFileCompat`、`permissions.mjs` 的 `alignPermissions` / `decideFileMode`、`sync-plugin.mjs` 的 `syncOneFile`。
+- 验证：`test/sync-plugin-perms.test.mjs` 五条 —— 源可执行 → 目标可执行、部署侧独有二进制不被改且计数、
+  源普通文件仍是 644、`alignPermissions` 源缺失时跳过 chmod、dryRun 不碰权限。
+- 违反后果：插件 `tools/` 下的外部二进制被改成 644，下游只报「文件存在但不可执行」，
+  功能静默失效且极难回溯到同步这一步；反向做错（给所有文件补 x）则是安全面扩大。
+
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
 - 依据：`test/` 下的 `*.test.mjs`（份数随工具增删变化，以 `ls test/*.test.mjs | wc -l` 实测为准），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。
