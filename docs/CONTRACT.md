@@ -437,6 +437,30 @@ core 里成立的能力，工具层必须能触达；否则使用者只有两条
 - 验证：`findDshHome()` 在有 `DSH_HOME` 时直接返回它；清空后回落到 `~/.dsh`（实测本机 `os.homedir()` 与其 `.dsh` 同源）。
 - 违反后果：换平台/换机器后功能静默走错目录，或每次都刷一屏平台不支持的系统调用失败。
 
+### C-126 长任务默认注册宿主后台 job，降级必须可见
+
+超过「一次工具调用能舒服等完」的操作（下载、克隆、发包），默认注册为宿主后台 job
+（`ctx.jobs`，由 base bundle 的 jobs-local 提供），工具立即返回 jobId，用宿主原生的
+`job_output` / `job_list` / `job_kill` 跟进与中止。
+
+- **默认后台，显式才同步**：`background` 缺省 true；传 false 才同步等待。小文件也走 job 的代价
+  是两次调用，但「默认卡住的工具」比「多一次查询」糟得多。
+- **注册有兜底**：`owner` 必须是**有活 agent 的会话 id**，带它失败不等于不能后台化——
+  退一步用无主注册通常仍能拿到 jobId；两步都失败才降级同步，并把原因写进 `jobFallbackReason`。
+- **降级不静默**：同步结果带 `async: false`，让调用方一眼看出「没走后台」，
+  而不是去等一个不存在的 jobId。静默降级会让「为什么没拿到 jobId」变成只能靠猜的问题。
+- **取消要真取消**：job 的 `cancel` 必须把中止信号传到实际 IO（`AbortController` + 下载/传输层的 signal），
+  只改布尔标记的「取消」等于让任务跑到超时才退出。
+- **`run(handle)` 必须返回 `{ cancel, done }`**：`done` 是 `Promise<{ status, detail? }>`，
+  抛异常会被宿主记为「producer 契约违规」，所以内部要把异常收敛成 `failed`。
+- **dryRun 不走 job**：只探测不执行的操作没有后台化的意义。
+
+- 依据：`lib/core/github-download/job.js`、`lib/core/github-download/index.js` 的 `runGithubDownload`、
+  `lib/index.js` 的 execute（用 `ctx.get('jobs')` 取值而非为 jobs 单独 inject）。
+- 验证：`test/github-download-job.test.mjs` 十一条——spec 结构、成败映射、cancel 传信号、
+  owner/无主/双失败三条路径、默认后台返回 jobId、background:false 同步、jobs 缺失降级、注册失败带原因、dryRun 不注册。
+- 违反后果：同步等待把工具调用卡死；静默降级让人以为在等一个不存在的 job；假取消让任务白跑。
+
 ### C-601 新增工具必须带单测
 `test/<工具名>.test.mjs`，用 `node:test` + `node:assert/strict`，零依赖。
 - 依据：`test/` 下的 `*.test.mjs`（份数随工具增删变化，以 `ls test/*.test.mjs | wc -l` 实测为准），`package.json` 的 `test` 脚本为 `node test/run-tests.mjs`。

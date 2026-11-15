@@ -88,6 +88,7 @@ github_mirror     { action: "apply", dryRun: false }                    // 探�
 github_mirror     { action: "clear", dryRun: false }                    // 恢复直连
 github_mirror     { action: "probe" }                                   // 只探测，不写配置
 github_download   { url: "<GitHub 下载地址>" }                            // url 必填；channel 可空，缺省 auto
+github_download   { url: "<地址>", background: false }                    // background 可空，缺省 true=注册后台 job
 github_download   { url: "<地址>", dryRun: true }                        // dryRun 可空；true=只探通道不下载
 github_download   { url: "<地址>", sha256: "<期望哈希>" }                  // sha256 可空；给了就校验
 github_download   { url: "<地址>", channel: "direct" }                   // channel 可空；direct/mirror 只走单一路径
@@ -104,6 +105,8 @@ useful_tools      { action: "help" }                                     // acti
 `github_download` 的 `channel` 可空（`auto` 缺省：先探直连，不通再按候选清单轮换镜像；`direct` / `mirror` 只走单一路径）；
 `savePath` 可空（缺省 `<cwd>/<URL 文件名>`），`cwd`、`mirror`、`timeoutMs` 可空；
 `dryRun: true` 返回直连与各镜像的探测结果及推荐通道。
+`background` 缺省 `true`：下载注册为宿主后台 job，立即返回 `jobId`，用 `job_output` / `job_kill` 跟进与中止；
+传 `false` 则同步等待。宿主没有 jobs 服务时自动降级同步，结果里带 `async: false` 与 `jobFallbackReason`。
 它只管「通过本工具下载」这条路径——用 bash 手敲 `curl` 不会被改写。
 `patch_cifs_write` 的 `apply` / `revert` 需显式传 `dryRun: false` 才落盘。
 `quick_command` 的 `cwd` 可空，省略则沿用宿主进程工作目录。
