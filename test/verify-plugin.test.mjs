@@ -5,6 +5,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { analyzePlugin, inspectApplyReturns, readBundlePatch } from '../lib/core/verify-plugin/static.mjs';
+import { checkClient, checkInject } from '../lib/core/verify-plugin/check.mjs';
 
 /** 造一个临时插件目录：写 package.json + 入口文件，返回根路径。 */
 function makePlugin(source, { name = 'fake-plugin', patch = '' } = {}) {
@@ -117,5 +118,52 @@ test('readBundlePatch：无文件返回 found:false，不报错', () => {
   const root = mkdtempSync(join(tmpdir(), 'verify-plugin-'));
   try {
     assert.equal(readBundlePatch(root, 'x').found, false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('客户端入口按 exports["./client"] 识别，不写死 lib/client.js', () => {
+  const root = mkdtempSync(join(tmpdir(), 'verify-client-'));
+  try {
+    mkdirSync(join(root, 'plugin'), { recursive: true });
+    const pkg = {
+      name: 'p',
+      version: '0.0.0',
+      exports: { './client': './plugin/client.js' },
+      dsh: { client: { platform: 'web' } },
+    };
+    writeFileSync(join(root, 'package.json'), JSON.stringify(pkg));
+    writeFileSync(join(root, 'plugin', 'client.js'), 'window.__ModuleLoader__.load({ id: "p", factory: () => ({}) });');
+    const out = checkClient(root, pkg);
+    assert.equal(out.exists, true, '导出路径存在时不应判缺失');
+    assert.equal(out.hasLoader, true);
+    assert.equal(out.problems.length, 0, `不该有 problem，实际：${out.problems.join('；')}`);
+    assert.match(out.path, /plugin[/\\]client\.js$/, '应指向 exports 声明的入口');
+    assert.equal(out.entryFromExports, './plugin/client.js');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('客户端入口真缺失时仍报错（别把检查改废）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'verify-client-miss-'));
+  try {
+    const pkg = { name: 'p', version: '0.0.0', dsh: { client: { platform: 'web' } } };
+    writeFileSync(join(root, 'package.json'), JSON.stringify(pkg));
+    const out = checkClient(root, pkg);
+    assert.equal(out.exists, false);
+    assert.ok(out.problems.length > 0, '声明了 dsh.client 却没有任何入口时必须报错');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('inject 校验：陌生服务名只作提示，不判失败', () => {
+  const root = mkdtempSync(join(tmpdir(), 'verify-inject-'));
+  try {
+    mkdirSync(join(root, 'lib'), { recursive: true });
+    // 声明一个宿主池里没有、也没有近邻的名字：可能由依赖/其它插件提供，不该判失败
+    writeFileSync(join(root, 'lib', 'index.js'), 'export const inject = ["browser"]; export function apply() {}\n');
+    const analysis = { filesAnalyzed: [join(root, 'lib', 'index.js')] };
+    const out = checkInject({ analysis });
+    assert.deepEqual(out.declared, ['browser']);
+    assert.ok(Array.isArray(out.unknown), 'unknown 应为数组');
+    // 真实宿主里 browser 能扫到；扫不到时也只应进 unknown（由调用方降级为提示），这里锁住结构
+    assert.ok(out.unknown.length <= 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
