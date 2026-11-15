@@ -100,11 +100,32 @@ test('done：下载成功映射 completed，失败映射 failed 并带 detail', 
   assert.match(thrown.detail, /炸了/);
 });
 
+test('done：取消映射 killed，与「网络失败」区分开', async () => {
+  const spec = buildDownloadJobSpec({ url: 'u', fileName: 'f', savePath: join(tmpdir(), 'f') }, async () => ({ ok: false, cancelled: true }));
+  const outcome = await spec.run(fakeHandle()).done;
+  assert.equal(outcome.status, 'killed', '取消要报 killed，不能和 failed 混在一起');
+  assert.match(outcome.detail, /取消/);
+});
+
+test('cancel：中止后 done 返回 killed，且不当作「通道全失败」', async () => {
+  const spec = buildDownloadJobSpec({ url: 'u', fileName: 'f', savePath: join(tmpdir(), 'f') }, (signal) => {
+    return new Promise((resolve) => {
+      signal.addEventListener('abort', () => resolve({ ok: false, cancelled: true, error: '已取消（用户中止下载）' }), { once: true });
+    });
+  });
+  const hooks = spec.run(fakeHandle());
+  hooks.cancel();
+  const outcome = await hooks.done;
+  assert.equal(outcome.status, 'killed');
+  assert.doesNotMatch(String(outcome.detail), /所有通道/, '不能把取消说成通道全挂');
+});
+
 test('done 的 status 只能取宿主认可的枚举值', async () => {
   const allowed = new Set(['running', 'stopping', 'completed', 'killed', 'failed']);
   const cases = [
     async () => ({ ok: true }),
     async () => ({ ok: false, error: 'x' }),
+    async () => ({ ok: false, cancelled: true }),
     async () => { throw new Error('y'); },
   ];
   for (const doDownload of cases) {
