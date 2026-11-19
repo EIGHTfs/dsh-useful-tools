@@ -92,6 +92,7 @@ github_download   { url: "<地址>", background: false }                    // b
 github_download   { url: "<地址>", dryRun: true }                        // dryRun 可空；true=只探通道不下载
 github_download   { url: "<地址>", sha256: "<期望哈希>" }                  // sha256 可空；给了就校验
 github_download   { url: "<地址>", channel: "direct" }                   // channel 可空；direct/mirror 只走单一路径
+github_download   { url: "<地址>", resume: false }                       // resume 可空，缺省 true=可续传时从断点继续；false=强制整下
 patch_cifs_write  { action: "check" }                                   // action 可空，缺省 check
 patch_cifs_write  { action: "apply", dryRun: false }                     // dryRun 缺省 true
 quick_command     { name: "logs", command: "tail -n 50 app.log" }        // name 必填
@@ -103,6 +104,8 @@ useful_tools      { action: "help" }                                     // acti
 `hosts` 可空（缺省 `github.com`）；`rotate` 可空（缺省 true，探测失败换下一个候选）。
 探测不通的地址不会被写进候选清单，只在返回的 `rejected` 里告知。
 `github_download` 的 `channel` 可空（`auto` 缺省：先探直连，不通再按候选清单轮换镜像；`direct` / `mirror` 只走单一路径）；
+
+**断点续传**：`raw.githubusercontent.com` 直连支持 HTTP Range，中断后再跑会从已下字节继续（进度里能看到 `resumedFrom`），不必从头再来。镜像通道不透传 Range，走它时照旧整包下载。续传前会比对 `ETag`/总长指纹，远端文件变了就自动丢弃旧分片重下；完成后校验总长与 `sha256`（若传了），任一项不符即判失败——不会把半截或拼错的文件当成功。
 `savePath` 可空（缺省 `<cwd>/<URL 文件名>`），`cwd`、`mirror`、`timeoutMs` 可空；
 `dryRun: true` 返回直连与各镜像的探测结果及推荐通道。
 `background` 缺省 `true`：下载注册为宿主后台 job，立即返回 `jobId`，用 `job_output` / `job_kill` 跟进与中止；
